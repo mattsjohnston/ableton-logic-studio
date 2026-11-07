@@ -84,6 +84,12 @@ def render_stem(clips, tempo, sr, length_beats, out_path):
     write_wav(out_path, buf, sr)
 
 
+def _quicksampler_files(logicx):
+    import glob, plistlib
+    md = sorted(glob.glob(os.path.join(logicx, "Alternatives", "*", "MetaData.plist")))
+    return list(plistlib.load(open(md[0], "rb")).get("QuicksamplerFiles", [])) if md else []
+
+
 def default_treatment(part):
     inst = part.get("instrument") or {}
     if part["kind"] == "audio":
@@ -173,8 +179,32 @@ def ingest(logicx, song_dir):
         "source": {"logicx": logicx, "parser": "logic2ableton " + __import__("logic2ableton").__version__ if hasattr(__import__("logic2ableton"), "__version__") else "logic2ableton"},
         "sections": [{"id": f"s{i+1}", "name": f"Section {i+1}", "start": a, "end": b} for i, (a, b) in enumerate(secs)],
         "parts": parts, "ignored_tracks": ignored,
+        "quicksampler_files": _quicksampler_files(logicx),
         "warnings": proj.compatibility_warnings,
         "performers": [], "lineups": {"default": {"description": "Everything plays back; vocals live", "treatments": {}}},
     }
-    json.dump(song, open(os.path.join(song_dir, "song.json"), "w"), indent=2)
+    path = os.path.join(song_dir, "song.json")
+    if os.path.exists(path):
+        song = _merge_user_edits(json.load(open(path)), song)
+    tmp = path + ".tmp"; json.dump(song, open(tmp, "w"), indent=2); os.replace(tmp, path)
     return song
+
+
+def _merge_user_edits(old, new):
+    """Re-ingest keeps what the user (or link-stems) set: lineups, performers, section names/boundaries, stems,
+    treatment overrides, and parts that only exist from exports."""
+    new["lineups"] = old.get("lineups") or new["lineups"]
+    new["performers"] = old.get("performers", new["performers"])
+    if old.get("sections_edited") or any(not s["name"].startswith("Section ") for s in old.get("sections", [])):
+        new["sections"], new["sections_edited"] = old["sections"], True
+    if old.get("mix"): new["mix"] = old["mix"]
+    old_parts = {p["id"]: p for p in old.get("parts", [])}
+    for p in new["parts"]:
+        o = old_parts.pop(p["id"], None)
+        if not o: continue
+        for k in ("stem", "default_treatment", "role_hint", "notes_user"):
+            if o.get(k) is not None and (k != "default_treatment" or o.get("treatment_edited")):
+                p[k] = o[k]
+        if o.get("treatment_edited"): p["treatment_edited"] = True
+    new["parts"] += [o for o in old_parts.values() if o.get("origin")]  # export-only parts (aux/FX stems)
+    return new

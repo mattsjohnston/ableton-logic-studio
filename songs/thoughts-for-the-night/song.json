@@ -123,7 +123,8 @@
         "ChromaVerb",
         "Space D"
       ],
-      "default_treatment": "live-vocal"
+      "default_treatment": "live-vocal",
+      "role_hint": "vocal"
     },
     {
       "id": "golden-era-plate-1st-half-chorus",
@@ -140,7 +141,8 @@
         "Compressor",
         "Space D"
       ],
-      "default_treatment": "live-vocal"
+      "default_treatment": "live-vocal",
+      "role_hint": "vocal"
     },
     {
       "id": "golden-era-plate-2nd-half-chorus",
@@ -158,7 +160,8 @@
         "Space D",
         "Melodyne"
       ],
-      "default_treatment": "live-vocal"
+      "default_treatment": "live-vocal",
+      "role_hint": "vocal"
     },
     {
       "id": "golden-era-plate-verse-alt-2",
@@ -175,7 +178,8 @@
         "Compressor",
         "Space D"
       ],
-      "default_treatment": "live-vocal"
+      "default_treatment": "live-vocal",
+      "role_hint": "vocal"
     },
     {
       "id": "golden-era-plate-transition-vocals",
@@ -193,7 +197,8 @@
         "Space D",
         "Melodyne"
       ],
-      "default_treatment": "live-vocal"
+      "default_treatment": "live-vocal",
+      "role_hint": "vocal"
     },
     {
       "id": "textural-layer",
@@ -212,7 +217,8 @@
         "Spreader",
         "Limiter"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "fx"
     },
     {
       "id": "phone-filter-backing-over-chorus",
@@ -232,7 +238,8 @@
         "ChromaVerb",
         "Space D"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "vocal"
     },
     {
       "id": "fx-2-studio-cuts",
@@ -252,7 +259,8 @@
         "ChromaVerb",
         "ChromaGlow"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "fx"
     },
     {
       "id": "crash-hollywood-haze",
@@ -270,7 +278,8 @@
       "inserts": [
         "Channel EQ"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "shaker-1-flashback",
@@ -293,7 +302,8 @@
         "ChromaVerb",
         "Echo"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "snare-2-deep-end",
@@ -314,7 +324,8 @@
         "Phat FX",
         "ChromaVerb"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "hi-hat-1-lowtech-funk",
@@ -337,7 +348,8 @@
         "ChromaVerb",
         "Echo"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "tom-low-flashback",
@@ -359,7 +371,8 @@
         "Phat FX",
         "Space D"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "kick-1-flashback",
@@ -380,7 +393,8 @@
         "Overdrive",
         "Phat FX"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "kick-2-flashback",
@@ -401,7 +415,8 @@
         "Overdrive",
         "Phat FX"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "drums"
     },
     {
       "id": "inst-4",
@@ -420,7 +435,8 @@
         "ChromaVerb",
         "Channel EQ"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": null
     },
     {
       "id": "light-harmonics",
@@ -440,7 +456,8 @@
         "Channel EQ",
         "ChromaGlow"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "pad"
     },
     {
       "id": "lead-line-synth",
@@ -459,7 +476,8 @@
         "ChromaVerb",
         "Channel EQ"
       ],
-      "default_treatment": "midi-clip"
+      "default_treatment": "midi-clip",
+      "role_hint": "lead"
     },
     {
       "id": "bass-line",
@@ -477,7 +495,8 @@
       "inserts": [
         "Channel EQ"
       ],
-      "default_treatment": "midi-clip"
+      "default_treatment": "midi-clip",
+      "role_hint": "bass"
     },
     {
       "id": "verse-backing-synth",
@@ -493,7 +512,8 @@
       "notes": 154,
       "regions": 5,
       "inserts": [],
-      "default_treatment": "midi-clip"
+      "default_treatment": "midi-clip",
+      "role_hint": "pad"
     },
     {
       "id": "amped-synth-lead",
@@ -516,7 +536,8 @@
         "Echo",
         "Space D"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "lead"
     },
     {
       "id": "voice-becomes-flute",
@@ -536,7 +557,8 @@
         "Echo",
         "Channel EQ"
       ],
-      "default_treatment": "backing-audio"
+      "default_treatment": "backing-audio",
+      "role_hint": "lead"
     },
     {
       "id": "new-vision",
@@ -552,7 +574,8 @@
       "notes": 28,
       "regions": 2,
       "inserts": [],
-      "default_treatment": "midi-clip"
+      "default_treatment": "midi-clip",
+      "role_hint": "keys"
     }
   ],
   "ignored_tracks": [
@@ -617,6 +640,16 @@
       "reason": "Logic internal (master/preview/metronome); the tool generates its own click"
     }
   ],
+  "quicksampler_files": [
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Flashback/Tom Low - Flashback.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Hollywood Haze/Crash - Hollywood Haze.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Flashback/Kick 1 - Flashback.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Flashback/Shaker 1 - Flashback.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Studio Cuts Kit/FX 2 - Studio Cuts.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Flashback/Kick 2 - Flashback.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/LowTech Funk Kit/Hi-Hat 1 - LowTech Funk.aif",
+    "/Library/Application Support/Logic/EXS Factory Samples/03 Drums & Percussion/02 Electronic Drum Kits/Deep End Kit/TinySnare_DeepEnd.aif"
+  ],
   "warnings": [
     "2 audio file(s) listed by Logic were not found inside Media/Audio Files and cannot be copied yet: /Library/Audio/Apple Loops/Apple/19 Transition Effects/Full Power Riser 01.caf, /Library/Audio/Apple Loops/Apple/02 Electro House/Boomer FX 01.caf",
     "This project references 16 software-instrument file(s). MIDI notes were transferred as native MIDI tracks (and exported to MIDI/), but the software instruments and their settings are not transferred \u2014 reload them manually in Ableton.",
@@ -630,6 +663,121 @@
     "default": {
       "description": "Everything plays back; vocals live",
       "treatments": {}
+    },
+    "four": {
+      "name": "4-piece (Matt, Keys 2, Drummer, Bass)",
+      "performers": [
+        "matt",
+        "keys-2",
+        "drummer",
+        "bassist"
+      ],
+      "assignments": {
+        "phone-filter-verse": {
+          "treatment": "live-vocal",
+          "performer": "matt",
+          "rig": "matt-vox"
+        },
+        "golden-era-plate-1st-half-chorus": {
+          "treatment": "live-vocal",
+          "performer": "matt",
+          "rig": "matt-vox"
+        },
+        "golden-era-plate-2nd-half-chorus": {
+          "treatment": "live-vocal",
+          "performer": "matt",
+          "rig": "matt-vox"
+        },
+        "golden-era-plate-verse-alt-2": {
+          "treatment": "live-vocal",
+          "performer": "matt",
+          "rig": "matt-vox"
+        },
+        "golden-era-plate-transition-vocals": {
+          "treatment": "live-vocal",
+          "performer": "matt",
+          "rig": "matt-vox"
+        },
+        "textural-layer": {
+          "treatment": "backing-audio"
+        },
+        "phone-filter-backing-over-chorus": {
+          "treatment": "backing-audio"
+        },
+        "fx-2-studio-cuts": {
+          "treatment": "backing-audio"
+        },
+        "crash-hollywood-haze": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "shaker-1-flashback": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "snare-2-deep-end": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "hi-hat-1-lowtech-funk": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "tom-low-flashback": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "kick-1-flashback": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "kick-2-flashback": {
+          "treatment": "live-drums",
+          "performer": "drummer",
+          "rig": "drummer-kit"
+        },
+        "inst-4": {
+          "treatment": "backing-audio"
+        },
+        "light-harmonics": {
+          "treatment": "backing-audio"
+        },
+        "lead-line-synth": {
+          "treatment": "live-midi",
+          "performer": "matt",
+          "rig": "matt-keys"
+        },
+        "bass-line": {
+          "treatment": "live-guitar",
+          "performer": "bassist",
+          "rig": "bassist-di"
+        },
+        "verse-backing-synth": {
+          "treatment": "live-midi",
+          "performer": "keys-2",
+          "rig": "keys-2-keys"
+        },
+        "amped-synth-lead": {
+          "treatment": "backing-audio"
+        },
+        "voice-becomes-flute": {
+          "treatment": "backing-audio"
+        },
+        "new-vision": {
+          "treatment": "live-midi",
+          "performer": "keys-2",
+          "rig": "keys-2-keys",
+          "sections": {
+            "s11": "midi-clip"
+          }
+        }
+      }
     }
   }
 }

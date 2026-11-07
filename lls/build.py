@@ -223,9 +223,10 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None):
         rig = LU._rig(band, who, rig_id) or {}
         pids = [p["id"] for p in dparts]
         if make_drum_track:
-            proto = make_drum_track(P, pids, song, song_dir)
+            info = []
+            proto = make_drum_track(P, pids, song, song_dir, project_dir=proj, info=info)
             if isinstance(proto, tuple): proto = proto[0]
-            note = f"Drum Rack from {len(pids)} parts"
+            note = f"Drum Rack from {len(pids)} parts" + (f" (⚠ {'; '.join(info)})" if info else "")
         else:
             proto = P.midi_track
             note = f"⚠ lls.drumrack missing: plain MIDI track, NO DRUM RACK for {len(pids)} parts"
