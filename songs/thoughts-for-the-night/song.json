@@ -1,0 +1,635 @@
+{
+  "schema": 1,
+  "title": "Thoughts For The Night",
+  "tempo": 100.0,
+  "time_signature": [
+    4,
+    4
+  ],
+  "sample_rate": 44100,
+  "length_beats": 436.0,
+  "source": {
+    "logicx": "/Users/mattjohnston/Dev/Ableton Logic Studio/samples/Thoughts For The Night.logicx",
+    "parser": "logic2ableton 2.5.1"
+  },
+  "sections": [
+    {
+      "id": "s1",
+      "name": "Section 1",
+      "start": 0.0,
+      "end": 16.0
+    },
+    {
+      "id": "s2",
+      "name": "Section 2",
+      "start": 16.0,
+      "end": 48.0
+    },
+    {
+      "id": "s3",
+      "name": "Section 3",
+      "start": 48.0,
+      "end": 80.0
+    },
+    {
+      "id": "s4",
+      "name": "Section 4",
+      "start": 80.0,
+      "end": 112.0
+    },
+    {
+      "id": "s5",
+      "name": "Section 5",
+      "start": 112.0,
+      "end": 128.0
+    },
+    {
+      "id": "s6",
+      "name": "Section 6",
+      "start": 128.0,
+      "end": 144.0
+    },
+    {
+      "id": "s7",
+      "name": "Section 7",
+      "start": 144.0,
+      "end": 176.0
+    },
+    {
+      "id": "s8",
+      "name": "Section 8",
+      "start": 176.0,
+      "end": 208.0
+    },
+    {
+      "id": "s9",
+      "name": "Section 9",
+      "start": 208.0,
+      "end": 240.0
+    },
+    {
+      "id": "s10",
+      "name": "Section 10",
+      "start": 240.0,
+      "end": 272.0
+    },
+    {
+      "id": "s11",
+      "name": "Section 11",
+      "start": 272.0,
+      "end": 304.0
+    },
+    {
+      "id": "s12",
+      "name": "Section 12",
+      "start": 304.0,
+      "end": 336.0
+    },
+    {
+      "id": "s13",
+      "name": "Section 13",
+      "start": 336.0,
+      "end": 368.0
+    },
+    {
+      "id": "s14",
+      "name": "Section 14",
+      "start": 368.0,
+      "end": 396.0
+    },
+    {
+      "id": "s15",
+      "name": "Section 15",
+      "start": 396.0,
+      "end": 436.0
+    }
+  ],
+  "parts": [
+    {
+      "id": "phone-filter-verse",
+      "name": "Phone Filter (Verse)",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/phone-filter-verse.wav",
+      "regions": 1,
+      "inserts": [
+        "Channel EQ",
+        "Ringshifter",
+        "Compressor",
+        "Limiter",
+        "ChromaVerb",
+        "Space D"
+      ],
+      "default_treatment": "live-vocal"
+    },
+    {
+      "id": "golden-era-plate-1st-half-chorus",
+      "name": "Golden Era Plate (1st half Chorus)",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/golden-era-plate-1st-half-chorus.wav",
+      "regions": 9,
+      "inserts": [
+        "Channel EQ",
+        "Compressor",
+        "Space D"
+      ],
+      "default_treatment": "live-vocal"
+    },
+    {
+      "id": "golden-era-plate-2nd-half-chorus",
+      "name": "Golden Era Plate (2nd Half Chorus)",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/golden-era-plate-2nd-half-chorus.wav",
+      "regions": 5,
+      "inserts": [
+        "Channel EQ",
+        "Compressor",
+        "Space D",
+        "Melodyne"
+      ],
+      "default_treatment": "live-vocal"
+    },
+    {
+      "id": "golden-era-plate-verse-alt-2",
+      "name": "Golden Era Plate (Verse Alt 2)",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/golden-era-plate-verse-alt-2.wav",
+      "regions": 9,
+      "inserts": [
+        "Channel EQ",
+        "Compressor",
+        "Space D"
+      ],
+      "default_treatment": "live-vocal"
+    },
+    {
+      "id": "golden-era-plate-transition-vocals",
+      "name": "Golden Era Plate (Transition Vocals)",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/golden-era-plate-transition-vocals.wav",
+      "regions": 4,
+      "inserts": [
+        "Channel EQ",
+        "Compressor",
+        "Space D",
+        "Melodyne"
+      ],
+      "default_treatment": "live-vocal"
+    },
+    {
+      "id": "textural-layer",
+      "name": "Textural Layer",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/textural-layer.wav",
+      "regions": 3,
+      "inserts": [
+        "Channel EQ",
+        "Space D",
+        "Compressor",
+        "Spreader",
+        "Limiter"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "phone-filter-backing-over-chorus",
+      "name": "Phone Filter (Backing over Chorus)",
+      "kind": "audio",
+      "instrument": {
+        "type": "audio"
+      },
+      "stem": null,
+      "raw_stem": "stems/raw/phone-filter-backing-over-chorus.wav",
+      "regions": 6,
+      "inserts": [
+        "Channel EQ",
+        "Ringshifter",
+        "Compressor",
+        "Limiter",
+        "ChromaVerb",
+        "Space D"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "fx-2-studio-cuts",
+      "name": "FX 2 - Studio Cuts",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/fx-2-studio-cuts.json",
+      "notes": 21,
+      "regions": 9,
+      "inserts": [
+        "Channel EQ",
+        "ChromaVerb",
+        "ChromaGlow"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "crash-hollywood-haze",
+      "name": "Crash - Hollywood Haze",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/crash-hollywood-haze.json",
+      "notes": 47,
+      "regions": 6,
+      "inserts": [
+        "Channel EQ"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "shaker-1-flashback",
+      "name": "Shaker 1 - Flashback",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/shaker-1-flashback.json",
+      "notes": 200,
+      "regions": 8,
+      "inserts": [
+        "Channel EQ",
+        "ChromaGlow",
+        "Overdrive",
+        "Phat FX",
+        "ChromaVerb",
+        "Echo"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "snare-2-deep-end",
+      "name": "Snare 2 - Deep End",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/snare-2-deep-end.json",
+      "notes": 31,
+      "regions": 3,
+      "inserts": [
+        "Channel EQ",
+        "Enveloper",
+        "Phat FX",
+        "ChromaVerb"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "hi-hat-1-lowtech-funk",
+      "name": "Hi-Hat 1 - LowTech Funk",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/hi-hat-1-lowtech-funk.json",
+      "notes": 247,
+      "regions": 6,
+      "inserts": [
+        "Channel EQ",
+        "ChromaGlow",
+        "Overdrive",
+        "Phat FX",
+        "ChromaVerb",
+        "Echo"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "tom-low-flashback",
+      "name": "Tom Low - Flashback",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/tom-low-flashback.json",
+      "notes": 53,
+      "regions": 4,
+      "inserts": [
+        "Channel EQ",
+        "ChromaGlow",
+        "Overdrive",
+        "Phat FX",
+        "Space D"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "kick-1-flashback",
+      "name": "Kick 1 - Flashback",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/kick-1-flashback.json",
+      "notes": 126,
+      "regions": 3,
+      "inserts": [
+        "Channel EQ",
+        "ChromaGlow",
+        "Overdrive",
+        "Phat FX"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "kick-2-flashback",
+      "name": "Kick 2 - Flashback",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Quick Sampler",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/kick-2-flashback.json",
+      "notes": 114,
+      "regions": 3,
+      "inserts": [
+        "Channel EQ",
+        "ChromaGlow",
+        "Overdrive",
+        "Phat FX"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "inst-4",
+      "name": "Inst 4",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Alchemy",
+        "preset": "Light Harmonics.acp"
+      },
+      "stem": null,
+      "midi": "midi/inst-4.json",
+      "notes": 290,
+      "regions": 11,
+      "inserts": [
+        "ChromaVerb",
+        "Channel EQ"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "light-harmonics",
+      "name": "Light Harmonics",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Alchemy",
+        "preset": "Light Harmonics.acp"
+      },
+      "stem": null,
+      "midi": "midi/light-harmonics.json",
+      "notes": 8,
+      "regions": 2,
+      "inserts": [
+        "ChromaVerb",
+        "Channel EQ",
+        "ChromaGlow"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "lead-line-synth",
+      "name": "Lead Line Synth",
+      "kind": "midi",
+      "instrument": {
+        "type": "analoglab",
+        "preset": "Blade Of Canada",
+        "state": "instruments/lead-line-synth.aupreset"
+      },
+      "stem": null,
+      "midi": "midi/lead-line-synth.json",
+      "notes": 130,
+      "regions": 6,
+      "inserts": [
+        "ChromaVerb",
+        "Channel EQ"
+      ],
+      "default_treatment": "midi-clip"
+    },
+    {
+      "id": "bass-line",
+      "name": "Bass Line",
+      "kind": "midi",
+      "instrument": {
+        "type": "analoglab",
+        "preset": "Da Fonk",
+        "state": "instruments/bass-line.aupreset"
+      },
+      "stem": null,
+      "midi": "midi/bass-line.json",
+      "notes": 112,
+      "regions": 5,
+      "inserts": [
+        "Channel EQ"
+      ],
+      "default_treatment": "midi-clip"
+    },
+    {
+      "id": "verse-backing-synth",
+      "name": "Verse backing Synth",
+      "kind": "midi",
+      "instrument": {
+        "type": "analoglab",
+        "preset": "Desynk",
+        "state": "instruments/verse-backing-synth.aupreset"
+      },
+      "stem": null,
+      "midi": "midi/verse-backing-synth.json",
+      "notes": 154,
+      "regions": 5,
+      "inserts": [],
+      "default_treatment": "midi-clip"
+    },
+    {
+      "id": "amped-synth-lead",
+      "name": "Amped Synth Lead",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Sculpture",
+        "preset": null
+      },
+      "stem": null,
+      "midi": "midi/amped-synth-lead.json",
+      "notes": 294,
+      "regions": 6,
+      "inserts": [
+        "Channel EQ",
+        "Pedalboard",
+        "Compressor",
+        "Amp",
+        "Echo",
+        "Space D"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "voice-becomes-flute",
+      "name": "Voice Becomes Flute",
+      "kind": "midi",
+      "instrument": {
+        "type": "logic-builtin",
+        "name": "Alchemy",
+        "preset": "Voice Becomes Flute.acp"
+      },
+      "stem": null,
+      "midi": "midi/voice-becomes-flute.json",
+      "notes": 124,
+      "regions": 1,
+      "inserts": [
+        "ChromaVerb",
+        "Echo",
+        "Channel EQ"
+      ],
+      "default_treatment": "backing-audio"
+    },
+    {
+      "id": "new-vision",
+      "name": "New Vision",
+      "kind": "midi",
+      "instrument": {
+        "type": "analoglab",
+        "preset": "New Vision sw26",
+        "state": "instruments/new-vision.aupreset"
+      },
+      "stem": null,
+      "midi": "midi/new-vision.json",
+      "notes": 28,
+      "regions": 2,
+      "inserts": [],
+      "default_treatment": "midi-clip"
+    }
+  ],
+  "ignored_tracks": [
+    {
+      "name": "Full Power Riser 01",
+      "status": "MISSING",
+      "reason": "plays an Apple Loop stored outside the project; include it in the Logic stem export"
+    },
+    {
+      "name": "Boomer FX 01",
+      "status": "MISSING",
+      "reason": "plays an Apple Loop stored outside the project; include it in the Logic stem export"
+    },
+    {
+      "name": "Preview",
+      "status": "internal",
+      "reason": "Logic internal (master/preview/metronome); the tool generates its own click"
+    },
+    {
+      "name": "Small Room/0.4s Snare Chamber",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (Channel EQ, Space D); print it as an FX stem"
+    },
+    {
+      "name": "Large Hall/3.9s Prince Hall One",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (Channel EQ, Space D); print it as an FX stem"
+    },
+    {
+      "name": "Small Plate/1.1s Vocal Plate",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (Channel EQ, Space D); print it as an FX stem"
+    },
+    {
+      "name": "Large Plate/4.4s Big Plate",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (Chorus, Space D, Channel EQ); print it as an FX stem"
+    },
+    {
+      "name": "Reverb",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (ChromaVerb); print it as an FX stem"
+    },
+    {
+      "name": "Flashback",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (Channel EQ, ChromaGlow, Overdrive, Phat FX); print it as an FX stem"
+    },
+    {
+      "name": "Delay",
+      "status": "covered-by-fx-stem",
+      "reason": "aux return (St-Delay); print it as an FX stem"
+    },
+    {
+      "name": "Click",
+      "status": "internal",
+      "reason": "Logic internal (master/preview/metronome); the tool generates its own click"
+    },
+    {
+      "name": "Master",
+      "status": "internal",
+      "reason": "Logic internal (master/preview/metronome); the tool generates its own click"
+    }
+  ],
+  "warnings": [
+    "2 audio file(s) listed by Logic were not found inside Media/Audio Files and cannot be copied yet: /Library/Audio/Apple Loops/Apple/19 Transition Effects/Full Power Riser 01.caf, /Library/Audio/Apple Loops/Apple/02 Electro House/Boomer FX 01.caf",
+    "This project references 16 software-instrument file(s). MIDI notes were transferred as native MIDI tracks (and exported to MIDI/), but the software instruments and their settings are not transferred \u2014 reload them manually in Ableton.",
+    "Excluded 170 unused or unreferenced audio file(s) from the selected Logic alternative.",
+    "10 take folder(s) play their comp or active take here, read from the Logic project on 5 track(s): Golden Era Plate (1st half Chorus), Golden Era Plate (2nd Half Chorus), Golden Era Plate (Transition Vocals), Golden Era Plate (Verse Alt 2), Phone Filter (Verse). Compare these with Logic, or flatten the take folders in Logic before converting.",
+    "2 audio file(s) referenced by the arrangement are not in the audio folder and were skipped: Boomer FX 01.caf, Full Power Riser 01.caf",
+    "19 audio file(s) are used in the Logic project, but the converter found no region for them, so they are MISSING from the result: Golden Era Plate (1st half Chorus)#01.wav, Golden Era Plate (2nd Half Chorus)#29.wav, Golden Era Plate (2nd Half Chorus)#30.wav, Golden Era Plate (2nd Half Chorus)#31.wav, Golden Era Plate (2nd Half Chorus)#32.wav, .... The files are fine; part of this project could not be read. Please report it."
+  ],
+  "performers": [],
+  "lineups": {
+    "default": {
+      "description": "Everything plays back; vocals live",
+      "treatments": {}
+    }
+  }
+}

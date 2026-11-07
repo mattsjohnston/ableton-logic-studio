@@ -5,3 +5,5 @@ __pycache__/
 samples/
 out/
 *.logicx
+songs/*/stems/
+*.wav
