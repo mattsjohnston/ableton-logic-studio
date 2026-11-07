@@ -86,7 +86,7 @@ class Build(unittest.TestCase):
         root = ET.fromstring(gzip.open(out).read())
         self.assertEqual(als.validate(root), [])
         self.assertEqual(len(list(root.iter("DrumGroupDevice"))), 1)
-        self.assertEqual(len(info), 2)
+        self.assertEqual(len([i for i in info if not i.startswith("pad source:")]), 2)
 
 
 if __name__ == "__main__":

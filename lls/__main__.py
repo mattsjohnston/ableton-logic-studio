@@ -2,6 +2,7 @@
        python -m lls build  <song_dir> [lineup_id] [--band band.json]
        python -m lls lineup suggest  <song_dir> <performer ids...> [--save <lineup_id>] [--band band.json]
        python -m lls lineup validate <song_dir> <lineup_id> [--band band.json]
+       python -m lls oneshots <song_dir>
        python -m lls link-stems <song_dir> <logic_export_dir>
        python -m lls setlist build <setlists/name.json> [--no-fallback] [--no-m4a]
        python -m lls ui [--port 8765] [--root .]"""
@@ -44,6 +45,14 @@ def main(argv):
         for f in r["fallback"]:
             for m in f["missing"]: print(f"  fallback missing: {f['song']} / {m['name']}: {m['reason']}")
         print(r["running_order"])
+    elif len(argv) >= 2 and argv[0] == "oneshots":
+        from . import lineup as L, oneshot
+        song = L.load_song(argv[1])
+        print(f"{'part':28} {'bar.beat':>9} {'vel':>4} {'len ms':>7} {'peak dBFS':>9}")
+        for p, r in oneshot.extract_all(argv[1], song):
+            if r is None: print(f"{p['id']:28} (no stem or notes: skipped)"); continue
+            m = r[1]
+            print(f"{p['id']:28} {oneshot.bar_beat(m['source_beat']):>9} {m['velocity']:>4} {m['length_ms']:7.0f} {m['peak_dbfs']:9.1f}")
     elif len(argv) >= 3 and argv[:2] == ["lineup", "suggest"]:
         from . import lineup as L
         save = _opt(argv, "--save")

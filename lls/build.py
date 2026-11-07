@@ -226,7 +226,9 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None):
             info = []
             proto = make_drum_track(P, pids, song, song_dir, project_dir=proj, info=info)
             if isinstance(proto, tuple): proto = proto[0]
-            note = f"Drum Rack from {len(pids)} parts" + (f" (⚠ {'; '.join(info)})" if info else "")
+            warn = [i for i in info if not i.startswith("pad source:")]
+            note = f"Drum Rack from {len(pids)} parts" + (f" (⚠ {'; '.join(warn)})" if warn else "")
+            note += " [" + "; ".join(i[len("pad source: "):] for i in info if i.startswith("pad source:")) + "]"
         else:
             proto = P.midi_track
             note = f"⚠ lls.drumrack missing: plain MIDI track, NO DRUM RACK for {len(pids)} parts"
