@@ -15,91 +15,91 @@
   "sections": [
     {
       "id": "s1",
-      "name": "Section 1",
+      "name": "Intro",
       "start": 0.0,
       "end": 16.0
     },
     {
       "id": "s2",
-      "name": "Section 2",
+      "name": "Break 1",
       "start": 16.0,
       "end": 48.0
     },
     {
       "id": "s3",
-      "name": "Section 3",
+      "name": "Verse 1",
       "start": 48.0,
       "end": 80.0
     },
     {
       "id": "s4",
-      "name": "Section 4",
+      "name": "Chorus 1",
       "start": 80.0,
       "end": 112.0
     },
     {
       "id": "s5",
-      "name": "Section 5",
+      "name": "Verse 2",
       "start": 112.0,
       "end": 128.0
     },
     {
       "id": "s6",
-      "name": "Section 6",
+      "name": "Verse 2 (cont.)",
       "start": 128.0,
       "end": 144.0
     },
     {
       "id": "s7",
-      "name": "Section 7",
+      "name": "Chorus 2",
       "start": 144.0,
       "end": 176.0
     },
     {
       "id": "s8",
-      "name": "Section 8",
+      "name": "Instrumental 1",
       "start": 176.0,
       "end": 208.0
     },
     {
       "id": "s9",
-      "name": "Section 9",
+      "name": "Bridge 1",
       "start": 208.0,
       "end": 240.0
     },
     {
       "id": "s10",
-      "name": "Section 10",
+      "name": "Chorus 3",
       "start": 240.0,
       "end": 272.0
     },
     {
       "id": "s11",
-      "name": "Section 11",
+      "name": "Chorus 3 (cont.)",
       "start": 272.0,
       "end": 304.0
     },
     {
       "id": "s12",
-      "name": "Section 12",
+      "name": "Chorus 3 (cont.)",
       "start": 304.0,
       "end": 336.0
     },
     {
       "id": "s13",
-      "name": "Section 13",
+      "name": "Instrumental 2",
       "start": 336.0,
       "end": 368.0
     },
     {
       "id": "s14",
-      "name": "Section 14",
+      "name": "Chorus 4",
       "start": 368.0,
       "end": 396.0
     },
     {
       "id": "s15",
-      "name": "Section 15",
+      "name": "Outro",
       "start": 396.0,
       "end": 436.0
     }

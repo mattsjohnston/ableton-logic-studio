@@ -186,8 +186,18 @@ def ingest(logicx, song_dir):
     path = os.path.join(song_dir, "song.json")
     if os.path.exists(path):
         song = _merge_user_edits(json.load(open(path)), song)
+    if not song.get("sections_edited"):
+        apply_section_names(song, song_dir)
     tmp = path + ".tmp"; json.dump(song, open(tmp, "w"), indent=2); os.replace(tmp, path)
     return song
+
+
+def apply_section_names(song, song_dir):
+    try:
+        for sec, name in zip(song["sections"], sections.suggest_names(song, song_dir)):
+            sec["name"] = name
+    except Exception as e:  # naming is a convenience; never fail ingest over it
+        print(f"   (section naming skipped: {e})")
 
 
 def _merge_user_edits(old, new):
@@ -195,7 +205,7 @@ def _merge_user_edits(old, new):
     treatment overrides, and parts that only exist from exports."""
     new["lineups"] = old.get("lineups") or new["lineups"]
     new["performers"] = old.get("performers", new["performers"])
-    if old.get("sections_edited") or any(not s["name"].startswith("Section ") for s in old.get("sections", [])):
+    if old.get("sections_edited"):
         new["sections"], new["sections_edited"] = old["sections"], True
     if old.get("mix"): new["mix"] = old["mix"]
     old_parts = {p["id"]: p for p in old.get("parts", [])}

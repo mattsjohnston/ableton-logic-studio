@@ -301,7 +301,14 @@ class Handler(BaseHTTPRequestHandler):
             sp = os.path.join(d, "song.json")
             if len(seg) == 2 and method == "GET": return self.send_json(200, read_json(sp))
             if len(seg) == 2 and method == "PUT":
-                song = self.body(); check_song(song); write_json_atomic(sp, song)
+                song = self.body(); check_song(song)
+                try:  # protect hand-edited sections from being renamed/re-split by a later re-ingest
+                    prev = json.load(open(sp))
+                    key = lambda ss: [(x.get("name"), x.get("start"), x.get("end")) for x in ss]
+                    if key(prev.get("sections", [])) != key(song.get("sections", [])): song["sections_edited"] = True
+                except (OSError, ValueError):
+                    pass
+                write_json_atomic(sp, song)
                 return self.send_json(200, {"ok": True})
             if len(seg) == 3 and method == "GET" and seg[2] == "activity":
                 return self.send_json(200, song_activity(d, read_json(sp)))
