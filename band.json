@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "interface": {"name": "Volt 276", "outputs": {"main": [1, 2], "click": [3, 4]}, "inputs": {"vocal-1": 1, "vocal-2": 2}},
+  "performers": [
+    {"id": "matt", "name": "Matt", "roles": ["vocal", "keys"],
+     "rigs": [{"id": "matt-keys", "kind": "keys", "controller": "Novation Impulse", "midi_port": "Impulse (MIDI)", "midi_channel": 1},
+              {"id": "matt-vox", "kind": "vocal", "audio_input": 1}]},
+    {"id": "keys-2", "name": "Keys 2", "roles": ["keys"],
+     "rigs": [{"id": "keys-2-keys", "kind": "keys", "controller": "MIDI keyboard", "midi_port": null, "midi_channel": 2}]},
+    {"id": "drummer", "name": "Drummer", "roles": ["drums"],
+     "rigs": [{"id": "drummer-kit", "kind": "drums", "controller": "e-kit (GM map)", "midi_port": null, "midi_channel": 10}]},
+    {"id": "bassist", "name": "Bass", "roles": ["bass"],
+     "rigs": [{"id": "bassist-di", "kind": "bass", "audio_input": 2}]}
+  ]
+}
