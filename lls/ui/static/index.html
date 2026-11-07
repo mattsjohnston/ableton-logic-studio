@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Band Sets</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ff4fa3'/%3E%3Cstop offset='1' stop-color='%237a5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='14' r='11' fill='url(%23g)'/%3E%3Cpath d='M3 22h26M5 25h22M8 28h16' stroke='%2312101c' stroke-width='2'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="top">
+  <div class="brand" title="Logic → Live band sets"><span class="sun"></span><b>LLS</b><span class="brand-sub">band sets</span></div>
+  <select id="song-select" class="sel" aria-label="Song"></select>
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="arrange" title="Arrange (1)">Arrange<kbd>1</kbd></button>
+    <button role="tab" data-view="lineup" title="Lineup board (2)">Lineup<kbd>2</kbd></button>
+    <button role="tab" data-view="band" title="Band (3)">Band<kbd>3</kbd></button>
+  </nav>
+  <div class="lineup-picker">
+    <span class="lbl">Lineup</span>
+    <select id="lineup-select" class="sel" aria-label="Lineup"></select>
+    <button id="lineup-menu" class="btn icon" title="Lineup actions" aria-label="Lineup actions">⋯</button>
+  </div>
+  <div class="spacer"></div>
+  <span id="save-state" class="save-state"></span>
+  <button id="undo" class="btn icon" title="Undo (⌘Z)" aria-label="Undo">↺</button>
+  <button id="redo" class="btn icon" title="Redo (⇧⌘Z)" aria-label="Redo">↻</button>
+  <button id="save" class="btn" title="Save (⌘S)">Save</button>
+  <button id="build" class="btn primary" title="Build Live set (⌘B)">Build</button>
+  <button id="theme" class="btn icon" title="Toggle light/dark" aria-label="Toggle theme">◐</button>
+  <button id="help" class="btn icon" title="Shortcuts (?)" aria-label="Shortcuts">?</button>
+</header>
+<div class="body">
+  <main id="main" tabindex="-1"></main>
+  <aside id="side">
+    <div class="side-tabs">
+      <button data-side="checks">Checks <span id="checks-count" class="count"></span></button>
+      <button data-side="accounted">Accounted for</button>
+    </div>
+    <div id="side-body"></div>
+  </aside>
+</div>
+<div id="menu" class="menu" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<dialog id="dlg"></dialog>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

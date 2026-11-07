@@ -3,7 +3,8 @@
        python -m lls lineup suggest  <song_dir> <performer ids...> [--save <lineup_id>] [--band band.json]
        python -m lls lineup validate <song_dir> <lineup_id> [--band band.json]
        python -m lls link-stems <song_dir> <logic_export_dir>
-       python -m lls setlist build <setlists/name.json> [--no-fallback] [--no-m4a]"""
+       python -m lls setlist build <setlists/name.json> [--no-fallback] [--no-m4a]
+       python -m lls ui [--port 8765] [--root .]"""
 import json, sys
 
 
@@ -63,6 +64,9 @@ def main(argv):
         print(f"{argv[3]}: {errors} errors, {len(problems) - errors} warnings")
         _print_problems(problems)
         sys.exit(1 if errors else 0)
+    elif argv[:1] == ["ui"]:
+        from .ui.server import main as ui_main
+        ui_main(argv[1:])
     else:
         print(__doc__); sys.exit(1)
 
