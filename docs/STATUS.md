@@ -6,9 +6,9 @@
 - ✅ Ingest of Logic 11 and **Logic 13** projects (read-only): tempo, sections (auto-named), parts, MIDI, plugin→track map, Analog Lab full state, accounted-for list. Re-ingest keeps user edits.
 - ✅ Set opens in Live 12.4.25b1. Scenes per section + STOP, 1-bar quantize, tempo correct, Analog Lab presets survive a Live re-save, click on outputs 3/4.
 - ✅ `link-stems`: 21/23 Logic stems linked; the duplicate "Light Harmonics" export was resolved by audio activity.
-- ⏳ Snare 2 stem (export dies before finishing) and the aux reverb/delay returns: need the screen awake.
+- ⏳ Snare 2 stem (Logic's single-track export dies near the end) and the 4 aux reverb returns (exports come out silent or get deleted): GUI automation of Logic stopped as unreliable. These need the missing kits installed, then a manual export.
 - ⏳ Hi-Hat 1 + Snare 2 are **silent in Logic on this Mac** (kits not installed; Logic offers 12.7 GB of packs). The full-mix bounce lacks them too. Needs the user's choice: download here, or export on the original Mac.
-- ⏳ Playback CPU test of a full set (the display went to sleep).
+- ✅ Playback CPU: busiest section of the 4-piece set (3 Analog Lab AU, Drum Rack, 10 stems, click, cues) = **20–23 %** on Live's CPU meter (M3 Pro).
 
 ## Phase 2: UI + lineups
 - ✅ Lineup engine: resolve / validate / suggest for 2–5 performers; live treatments (vocal/bass inputs, keyboard port+channel routing, drums). Named-port routing verified in Live (Impulse (MIDI) Ch.1).
@@ -22,7 +22,8 @@
 
 ## Phase 4: show
 - 🧪 Setlist build (one set per song, show order), running order md/html, phone fallback mixes (+ click-left), `docs/stage-setup.md` (controller details partly unverified).
-- 🧪 Spoken cues track (on for Thoughts) and optional scene auto-advance (follow-action enum inferred from Live-saved sets, **unverified in Live**).
+- 🧪 Spoken cues track (on for Thoughts).
+- ✅ Scene auto-advance verified in Live: Intro (4 bars) moved on to Break 1 by itself (FollowActionA=4 = Next, FollowTime in beats).
 - Not built: AbletonOSC rehearsal remote. It's optional, because rebuilding/opening a set per lineup from the UI covers lineup switching.
 
 ## Needs Matt
