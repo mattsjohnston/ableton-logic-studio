@@ -1,5 +1,6 @@
 """CLI:  python -m lls ingest <project.logicx> <song_dir>
-       python -m lls build  <song_dir> [lineup]"""
+       python -m lls build  <song_dir> [lineup]
+       python -m lls link-stems <song_dir> <logic_export_dir>"""
 import sys
 
 def main(argv):
@@ -12,6 +13,9 @@ def main(argv):
         out, report = build(argv[1], argv[2] if len(argv) > 2 else "default")
         for name, tr, note in report: print(f"  {name:38} {tr:14} {note}")
         print(out)
+    elif len(argv) >= 3 and argv[0] == "link-stems":
+        from .stems import link
+        for f, what in link(argv[1], argv[2]): print(f"  {f:50} {what}")
     else:
         print(__doc__); sys.exit(1)
 
