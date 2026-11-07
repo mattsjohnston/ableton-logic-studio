@@ -1,5 +1,6 @@
 """CLI:  python -m lls ingest <project.logicx> <song_dir>
-       python -m lls build  <song_dir> [lineup]"""
+       python -m lls build  <song_dir> [lineup]
+       python -m lls ui     [--port 8765] [--root .]"""
 import sys
 
 def main(argv):
@@ -12,6 +13,9 @@ def main(argv):
         out, report = build(argv[1], argv[2] if len(argv) > 2 else "default")
         for name, tr, note in report: print(f"  {name:38} {tr:14} {note}")
         print(out)
+    elif argv[:1] == ["ui"]:
+        from .ui.server import main as ui_main
+        ui_main(argv[1:])
     else:
         print(__doc__); sys.exit(1)
 
