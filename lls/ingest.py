@@ -145,7 +145,10 @@ def ingest(logicx, song_dir):
                       "stem": None, "midi": f"midi/{pid}.json", "notes": len(notes),
                       "regions": len([r for r in t.regions if not r.is_muted]),
                       "inserts": [r["display"] for r in (plugins.get(t.name) or {}).get("inserts", [])]})
-    for p in parts: p["default_treatment"] = default_treatment(p)
+    from .lineup import role_hint
+    for p in parts:
+        p["default_treatment"] = default_treatment(p)
+        p["role_hint"] = role_hint(p)
 
     # every Logic track must be accounted for
     covered = {p["name"] for p in parts}

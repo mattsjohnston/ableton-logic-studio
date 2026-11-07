@@ -167,6 +167,63 @@ def validate(root):
     return problems
 
 
+# ---- input routing / monitoring -------------------------------------------------------------------------------
+# Encodings learned from Live-saved sets on this Mac (scan of Core Library + samples/*.als), not guessed except where noted:
+#  * AudioInputRouting, mono interface input n: Target "AudioIn/External/M{n-1}", Upper "Ext. In", Lower "{n}"
+#    (seen: M0/"1" in Core Library "Sample Reference.als", M1/"2" in "Live 11 Intro Empty.als", M2/"3" in
+#    "Podcast & Radio.als"). Stereo pair l/l+1: "AudioIn/External/S{(l-1)//2}", Lower "l/l+1" (S0/"1/2", 190 hits).
+#    No input: "AudioIn/None", "No Input", "".
+#  * MidiInputRouting, all ports + all channels: Target "MidiIn/External.All/-1"; Live 12.4 writes Upper "All Ins",
+#    Lower "All Channels" (Chuck Sutton - Patience, Live 12 Standard Demo); older saves "Ext: All Ins"/"".
+#    A specific port: the Live 12.4.25 binary holds "MidiIn/External.Dev:" (and the literal
+#    "MidiIn/External.Dev:Computer Keyboard/"), i.e. "MidiIn/External.Dev:<port name>/<channel>", and the display
+#    prefix "Ch. ". ASSUMED (no saved example on disk): channel suffix is 0-based (ch 1 -> 0), by analogy with -1 = all,
+#    and Upper = port name. Live re-derives display strings from Target on load.
+#  * MonitoringEnum (DeviceChain/MainSequencer): 0 = In, 1 = Auto, 2 = Off (Live Object Model order). Saved defaults
+#    agree: new MIDI/audio tracks save 1 (Default MIDI Track.als, Recording Audio.als); "Sample Reference.als"
+#    playback tracks save 2. Schema 12.0_12402 only says RemoteableEnum.
+#  * Arm: DeviceChain/MainSequencer/Recorder/IsArmed (schema: MidiRecorder/AudioRecorder IsArmed).
+MONITOR_IN, MONITOR_AUTO, MONITOR_OFF = 0, 1, 2
+
+
+def _set_routing(r, target, upper, lower):
+    for tag, v in (("Target", target), ("UpperDisplayString", upper), ("LowerDisplayString", lower)):
+        r.find(tag).set("Value", v)
+
+
+def route_audio_input(track, audio_input):
+    """audio_input: interface input number (mono) or [l, r] stereo pair (l odd), as in band.json."""
+    r = track.find("DeviceChain/AudioInputRouting")
+    if audio_input is None:
+        _set_routing(r, "AudioIn/None", "No Input", ""); return
+    if isinstance(audio_input, (list, tuple)):
+        l = int(audio_input[0])
+        if l % 2 == 0 or int(audio_input[1]) != l + 1:
+            raise ValueError(f"stereo input must be an odd/even pair like [1, 2], got {audio_input}")
+        _set_routing(r, f"AudioIn/External/S{(l - 1) // 2}", "Ext. In", f"{l}/{l + 1}")
+    else:
+        n = int(audio_input)
+        _set_routing(r, f"AudioIn/External/M{n - 1}", "Ext. In", str(n))
+
+
+def route_midi_input(track, port, channel):
+    """port: Live's port name or None (all ins); channel: 1-16 or None (all)."""
+    r = track.find("DeviceChain/MidiInputRouting")
+    ch = -1 if channel is None else int(channel) - 1
+    lower = "All Channels" if channel is None else f"Ch. {int(channel)}"
+    if port is None:
+        _set_routing(r, f"MidiIn/External.All/{ch}", "All Ins", lower)
+    else:
+        _set_routing(r, f"MidiIn/External.Dev:{port}/{ch}", port, lower)
+
+
+def set_monitoring(track, mode, armed=None):
+    ms = track.find("DeviceChain/MainSequencer")
+    ms.find("MonitoringEnum").set("Value", str(mode))
+    if armed is not None:
+        ms.find("Recorder/IsArmed").set("Value", "true" if armed else "false")
+
+
 def write(root, out_als):
     os.makedirs(os.path.join(os.path.dirname(out_als), "Ableton Project Info"), exist_ok=True)
     with gzip.open(out_als, "wb") as f:
