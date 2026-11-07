@@ -10,7 +10,7 @@ Monitoring: In when a track is purely live; Auto + armed when it mixes live sect
 then has the track, the input is heard in empty/stopped sections) or when several tracks share one rig (sound switching,
 docs/model.md MVP: empty placeholder clips block the input in sections where that track is not live).
 """
-import copy, json, os, shutil
+import copy, json, os, shutil, subprocess, tempfile
 from collections import Counter
 import numpy as np
 
@@ -40,6 +40,68 @@ def click_wav(path, tempo, beats, sr, bpb):
         i = int(b * 60 / tempo * sr)
         buf[i:i + len(s)] += s[:, None]
     write_wav(path, buf, sr)
+
+
+CUE_VOICES = ("Samantha", "Alex")  # clear built-in macOS voices, tried in order; then the system default
+CUE_RATE = 220  # words per minute
+CUE_GAIN = 0.8
+
+
+def _speak(text, sr):
+    """Spoken text -> float32 stereo (n, 2) at sr, via macOS `say` + `afconvert`. Falls back to the default voice."""
+    with tempfile.TemporaryDirectory() as tmp:
+        aiff, wav = os.path.join(tmp, "c.aiff"), os.path.join(tmp, "c.wav")
+        for voice in CUE_VOICES + (None,):
+            cmd = ["say"] + (["-v", voice] if voice else []) + ["-r", str(CUE_RATE), "-o", aiff, text]
+            if subprocess.run(cmd, capture_output=True).returncode == 0 and os.path.exists(aiff): break
+        else:
+            raise RuntimeError(f"`say` failed for cue {text!r}")
+        subprocess.run(["afconvert", "-f", "WAVE", "-d", f"LEI16@{sr}", "-c", "2", aiff, wav], check=True, capture_output=True)
+        return _read_wav(wav)[0]
+
+
+def cue_text(section):
+    return section.get("cue") or section["name"]
+
+
+def cues_wav(path, song, speak=None):
+    """Full-length Cues.wav from bar 1 at song tempo: one bar before each section (not the first) a short spoken cue naming
+    it, starting on that bar's downbeat and trimmed to fit inside the bar. Returns [(section index, start_sec, end_sec)]."""
+    speak = speak or _speak
+    tempo, sr, secs = song["tempo"], song["sample_rate"], song["sections"]
+    bpb = song["time_signature"][0] * 4 / song["time_signature"][1]
+    bar_n = int(bpb * 60 / tempo * sr)
+    buf = np.zeros((int(song["length_beats"] * 60 / tempo * sr) + sr, 2), np.float32)
+    spoken, placed = {}, []
+    for i, s in enumerate(secs):
+        at = s["start"] - bpb
+        if at < 0: continue  # first section: the click count-in covers it
+        text = cue_text(s)
+        if text not in spoken: spoken[text] = np.asarray(speak(text, sr), np.float32) * CUE_GAIN
+        a = spoken[text][:bar_n].copy()
+        f = min(len(a), int(0.02 * sr))
+        if f: a[-f:] *= np.linspace(1, 0, f)[:, None]
+        k = int(at * 60 / tempo * sr)
+        buf[k:k + len(a)] += a
+        placed.append((i, k / sr, (k + len(a)) / sr))
+    write_wav(path, buf, sr)
+    return placed
+
+
+def follow_next(scene, beats):
+    """Scene follow action 'launch next scene after `beats` beats'.
+    Evidence (Live-saved sets under the Core Library, e.g. 'Live 11 Intro Empty.als', 'Live 11 Suite Empty.als',
+    'Live 11 Standard Empty.als', 'Live 11 Lite Empty.als'): every enabled scene FollowAction there has FollowActionA=4,
+    FollowChanceA=100, FollowActionB=0, FollowChanceB=0, IsLinked=false, LoopIterations=1, FollowTime in {32, 60, 64, 68}.
+    4 = Next matches the Live Object Model follow-action order (0 None, 1 Stop, 2 Again, 3 Previous, 4 Next, 5 First,
+    6 Last, 7 Any, 8 Other, 9 Jump). FollowTime values like 60 and 68 are not bar multiples, so the unit is beats.
+    UNVERIFIED in a running Live: the enum and unit are well supported by those saves, but no on-disk set pairs a scene
+    follow time with a known scene length, so confirm by opening the built set."""
+    for p, v in [("FollowAction/FollowTime", beats), ("FollowAction/IsLinked", False), ("FollowAction/LoopIterations", 1),
+                 ("FollowAction/FollowActionA", 4), ("FollowAction/FollowActionB", 0), ("FollowAction/FollowChanceA", 100),
+                 ("FollowAction/FollowChanceB", 0), ("FollowAction/JumpIndexA", 0), ("FollowAction/JumpIndexB", 0),
+                 ("FollowAction/FollowActionEnabled", True)]:
+        als.setv(scene, p, v)
 
 
 def active(audio, sr, tempo, start, end, thresh=1e-4):
@@ -81,9 +143,14 @@ def _drum_maker():
         return None
 
 
-def build(song_dir, lineup="default", out_root="out/sets", band_path=None):
+def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=None, auto_advance=None):
+    """cues / auto_advance: None -> song.json "options" ({"cues": bool, "auto_advance": bool}, both default false)."""
     song = LU.load_song(song_dir)
     band = _find_band(band_path)
+    opts = song.get("options") or {}
+    cues = bool(opts.get("cues", False) if cues is None else cues)
+    auto_advance = bool(opts.get("auto_advance", False) if auto_advance is None else auto_advance)
+    click_out = int(((band.get("interface") or {}).get("outputs") or {}).get("click", [CLICK_OUT])[0])
     res = LU.resolve(song, band, lineup)
     problems = LU.validate(song, band, lineup)
     title, tempo, sr = song["title"], song["tempo"], song["sample_rate"]
@@ -261,8 +328,17 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None):
     cw = os.path.join(smp, "Click.wav"); click_wav(cw, tempo, song["length_beats"], sr, int(bpb))
     ct = add_track(a_proto, "Click", COLORS["click"],
                    {i: als.audio_clip(P.audio_clip, cw, proj, f"Click · {s['name']}", 0, s["start"], s["end"], tempo) for i, s in enumerate(secs)})
-    als.route_output(ct, CLICK_OUT)
-    report.append(("Click (generated)", "click", f"routed to outputs {CLICK_OUT}/{CLICK_OUT + 1}"))
+    als.route_output(ct, click_out)
+    report.append(("Click (generated)", "click", f"routed to outputs {click_out}/{click_out + 1}"))
+    if cues:
+        cwp = os.path.join(smp, "Cues.wav"); placed = cues_wav(cwp, song)
+        caudio, csr = _read_wav(cwp)
+        clips = {i: als.audio_clip(P.audio_clip, cwp, proj, f"Cues · {s['name']}", COLORS["click"], s["start"], s["end"], tempo, loop=False)
+                 for i, s in enumerate(secs) if active(caudio, csr, tempo, s["start"], s["end"])}
+        cut = add_track(a_proto, "Cues", COLORS["click"], clips)
+        als.route_output(cut, click_out)
+        report.append(("Cues (generated)", "cues", f"{len(placed)} spoken cues one bar before each section, routed to outputs "
+                       f"{click_out}/{click_out + 1} (separate track from the click)"))
 
     for i, t in enumerate(built): tracks.insert(i, t)
     for t in tracks:
@@ -274,6 +350,8 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None):
         bar = f" (bar {int(s['start'] // bpb) + 1})" if s["start"] is not None else ""
         als.setv(sc, "Name", s["name"] + bar); als.setv(sc, "Color", 0 if s["name"] == "STOP" else SCENE_COLORS[i % len(SCENE_COLORS)])
         als.setv(sc, "Tempo", tempo); als.setv(sc, "IsTempoEnabled", s["name"] != "STOP")
+        if auto_advance and s["name"] != "STOP" and not s.get("vamp"):
+            follow_next(sc, s["end"] - s["start"])
         scp.append(sc)
 
     tn = ls.find("MainTrack/DeviceChain/Mixer/Tempo"); als.setv(tn, "Manual", tempo)
