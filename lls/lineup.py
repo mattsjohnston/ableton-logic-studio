@@ -196,6 +196,8 @@ def validate(song, band, lineup_id):
                 add("error", "bad-treatment", f"unknown treatment '{t}'", pid, sid); continue
             if t in LIVE:
                 if not who or not rig_id:
+                    if t == "live-vocal":  # nothing plays back either way; just no mic input track
+                        add("warn", "no-performer", "live vocal with no singer assigned: no mic input track will be made", pid, sid); continue
                     add("error", "no-performer", f"{t} needs a performer and a rig", pid, sid); continue
                 if who not in perfs:
                     add("error", "no-performer", f"performer '{who}' is not in band.json", pid, sid); continue

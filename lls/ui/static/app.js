@@ -265,7 +265,8 @@ function applyIssueMarkers() {
     const lv = issueLevelFor(el.dataset.part);
     if (lv) el.dataset.issue = lv; else delete el.dataset.issue;
   }
-  const errs = S.issues.filter((i) => i.level === 'error').length, warns = S.issues.length - errs;
+  const uniq = [...new Map(S.issues.map((i) => [`${i.level}|${i.part || ''}|${i.message}`, i])).values()];
+  const errs = uniq.filter((i) => i.level === 'error').length, warns = uniq.length - errs;
   const c = $('#checks-count');
   c.className = 'count ' + (S.vState !== 'ok' ? '' : errs ? 'err' : warns ? 'warn' : 'ok');
   c.textContent = S.vState !== 'ok' ? '–' : errs ? errs : warns ? warns : '✓';
@@ -564,11 +565,21 @@ function checksHtml() {
   if (S.vState === 'idle') return h + '<div class="panel-note">Checking…</div>';
   if (!S.issues.length) return h + '<div class="panel-note good">✓ No problems in this lineup.</div>';
   const order = { error: 0, warn: 1 };
-  const list = [...S.issues].sort((a, b) => (order[a.level] ?? 2) - (order[b.level] ?? 2));
+  // group identical problems on the same part across sections (one row per part+message)
+  const groups = new Map();
+  for (const i of S.issues) {
+    const k = `${i.level}|${i.part || ''}|${i.message}`;
+    if (!groups.has(k)) groups.set(k, { ...i, sections: [] });
+    if (i.section) groups.get(k).sections.push(i.section);
+  }
+  const list = [...groups.values()].sort((a, b) => (order[a.level] ?? 2) - (order[b.level] ?? 2));
+  const nSec = (S.song.sections || []).length;
   return h + '<div class="checks-list">' + list.map((i) => {
-    const p = i.part && partById(i.part), s = i.section && secById(i.section);
-    const where = [p?.name || i.part, s?.name || i.section].filter(Boolean).join(' · ');
-    return `<div class="issue ${esc(i.level)}" data-ipart="${esc(i.part || '')}" data-isec="${esc(i.section || '')}" tabindex="0">
+    const p = i.part && partById(i.part);
+    const secs = i.sections.length === 0 ? '' : i.sections.length === nSec ? 'all sections'
+      : i.sections.length === 1 ? (secById(i.sections[0])?.name || i.sections[0]) : `${i.sections.length} sections`;
+    const where = [p?.name || i.part, secs].filter(Boolean).join(' · ');
+    return `<div class="issue ${esc(i.level)}" data-ipart="${esc(i.part || '')}" data-isec="${esc(i.sections.length === 1 ? i.sections[0] : '')}" tabindex="0">
       <span class="lv"></span><span class="where">${esc(where || 'lineup')}</span><span class="msg">${esc(i.message)}</span></div>`;
   }).join('') + '</div>';
 }
