@@ -49,7 +49,7 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 5. **Acceptance:** opens in Live; scenes line up with sections; clips launch on the bar; tempo correct; Analog Lab parts play the Logic presets; the accounted-for report shows zero unexplained tracks. I verify by opening and re-saving in Live myself.
 
 ## Later phases (added)
-- **Drum kit port (Phase 3):** Quick Sampler drum tracks become a Drum Rack (same samples; printed processed one-shots for fidelity), with pads mapped to the e-kit's note map. Each drum piece is its own part, so each can be played live or sequenced separately.
+- **Drum kit port (Phase 3):** Quick Sampler drum tracks become a Drum Rack (same samples; printed processed one-shots for fidelity), with pads mapped to the e-kit's note map. **Decided: the drummer plays laptop sounds** (the kit sends MIDI into Live). The kit model isn't known yet, so we default to a General MIDI note map that can be edited per kit. Each drum piece is its own part, so each can be played live or sequenced separately.
 
 ## What I need from you for Phase 1
 - The two Logic exports for *Thoughts* (exact settings to follow), bounced on a machine that has Melodyne.
