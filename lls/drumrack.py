@@ -227,13 +227,20 @@ def make_simpler_track(protos, sample_path, project_dir, name, color, root=60, o
 
 
 def make_drum_track(protos, part_ids, song, song_dir, project_dir=None, name="Drums", color=5, samples=None,
-                    notes=None, ids=None, info=None):
+                    notes=None, ids=None, info=None, sample_source="auto", sources=None):
     """MIDI track with a Drum Rack: one pad per part, receiving its GM note, holding a Simpler with the part's sample.
 
     Returns (track_element, {part_id: gm_note}); sequence the rack by remapping each part's clip notes with
     `remap_notes(part_notes, gm[part_id])`. `notes` overrides the GM note per part id. Parts whose sample is missing
     get an empty pad (still on its GM note) and a message appended to `info` (and warnings.warn). `project_dir`
-    defaults to song_dir; samples are copied to <project_dir>/Samples/."""
+    defaults to song_dir; samples are copied to <project_dir>/Samples/.
+
+    `sample_source`: "printed" = one-shot cut from the part's Logic stem (lls.oneshot; carries the channel strip),
+    "factory" = the Quick Sampler file, "auto" (default) = printed when the part has a stem, else factory. Missing
+    both = empty pad + message. The one-shot holds one velocity's dynamics, so Simpler velocity sensitivity is
+    left untouched. The chosen source per pad is appended to `info` as "pad source: <name>: <src>" and stored in
+    the optional `sources` dict {part_id: "printed"|"factory"|"none"}."""
+    if sample_source not in ("printed", "factory", "auto"): raise ValueError(f"bad sample_source {sample_source!r}")
     project_dir = project_dir or song_dir
     by_id = {p["id"]: p for p in song["parts"]}
     parts = [by_id[i] for i in part_ids]
@@ -248,13 +255,22 @@ def make_drum_track(protos, part_ids, song, song_dir, project_dir=None, name="Dr
         als.setv(b, "BranchInfo/ReceivingNote", 128 - gm[p["id"]]); als.setv(b, "BranchInfo/SendingNote", 60)  # Live stores pad note as 128 - MIDI note (demo: snare 38 -> 90)
         als.setv(b, "BranchInfo/ChokeGroup", 0)
         als.setv(b, "Color", 8 + idx % 14); als.setv(b, "AutoColored", False)
-        path = sample_for_part(p, song, samples)
-        if path and os.path.isfile(path):
+        path, src = None, "none"
+        if sample_source in ("printed", "auto"):
+            from . import oneshot
+            r = oneshot.extract(song_dir, p, song)
+            if r: path, src = r[0], "printed"
+        if src == "none" and sample_source in ("factory", "auto"):
+            path = sample_for_part(p, song, samples)
+            if path and os.path.isfile(path): src = "factory"
+        if src != "none":
             b.find("DeviceChain/MidiToAudioDeviceChain/Devices").append(_simpler(protos, path, project_dir, 60))
         else:
-            msg = f"{p['name']}: sample not found ({path}); empty pad on GM note {gm[p['id']]}"
+            msg = f"{p['name']}: no {sample_source} sample ({path}); empty pad on GM note {gm[p['id']]}"
             warnings.warn(msg)
             if info is not None: info.append(msg)
+        if sources is not None: sources[p["id"]] = src
+        if info is not None: info.append(f"pad source: {p['name']}: {src}")
         br.append(b)
     t = copy.deepcopy(protos.midi_track)
     devs = t.find("DeviceChain/DeviceChain/Devices"); als.clear(devs); devs.append(rack)
