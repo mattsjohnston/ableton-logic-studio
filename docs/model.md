@@ -68,3 +68,13 @@ Playable instrument: `analoglab` (AU with injected state) or `drumrack` (from Qu
 - `error`: a live treatment with no performer/rig; a rig kind that doesn't fit the treatment; backing-audio with no stem; midi-clip/live-midi with no playable instrument; two live parts on the same performer+rig sounding at the same time when they need different instruments (that needs a chain switch, see below); two performers' rigs sharing the same MIDI port+channel.
 - `warn`: a performer with more than 2 overlapping live keys parts (hands); a part with notes outside the rig's playable range; a lineup that leaves a part "dropped".
 - **Sound switching:** if one performer+rig plays several instrument parts in different sections, the builder puts them on separate MIDI tracks that all take input from the same rig. Each section's scene arms only the right track through clip-launch track monitoring. MVP: separate tracks with monitoring Auto plus a launched placeholder clip.
+
+## setlists
+`setlists/<name>.json`, built with `python -m lls setlist build setlists/<name>.json` into `out/setlists/<name>/`.
+```json
+{"name": "example", "band": "band.json",
+ "songs": [{"song": "thoughts-for-the-night", "lineup": "default", "notes": ""}]}
+```
+- `songs[].song` is the folder name under `songs/`. `lineup` is a key in that song's `lineups` (default `"default"`). `notes` is free text printed in the running order. `band` is relative to the repo root (default `band.json`).
+- Output: `NN <Song> Project/` per song (sorts in show order; one Live set per song), `NN <Song> accounted-for.md`, `running-order.md`, `running-order.html` (print-friendly), and `fallback/` (`NN Song.wav` 24-bit, `NN Song click-left.wav`, `.m4a` of each, and `fallback-report.md` listing parts missing from the fallback).
+- Fallback = every part whose resolved treatment is `backing-audio`, `audio-loop` or `midi-clip` (per section), mixed from `stem` (else `raw_stem`) from bar 1 after a 2-bar count-in. Live parts are excluded. MIDI-only parts with no stem are listed as missing, not synthesized. Peak is normalized to -1 dBFS. `click-left` puts the click on L and a mono sum of the music on R.

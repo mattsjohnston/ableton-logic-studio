@@ -1,0 +1,7 @@
+{
+  "name": "example",
+  "band": "band.json",
+  "songs": [
+    {"song": "thoughts-for-the-night", "lineup": "default", "notes": "Opener. Count in from the phone file if the laptop dies."}
+  ]
+}

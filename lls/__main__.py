@@ -1,5 +1,6 @@
 """CLI:  python -m lls ingest <project.logicx> <song_dir>
-       python -m lls build  <song_dir> [lineup]"""
+       python -m lls build  <song_dir> [lineup]
+       python -m lls setlist build <setlists/name.json> [--no-fallback] [--no-m4a]"""
 import sys
 
 def main(argv):
@@ -12,6 +13,13 @@ def main(argv):
         out, report = build(argv[1], argv[2] if len(argv) > 2 else "default")
         for name, tr, note in report: print(f"  {name:38} {tr:14} {note}")
         print(out)
+    elif len(argv) >= 3 and argv[0] == "setlist" and argv[1] == "build":
+        from .setlist import build_setlist
+        r = build_setlist(argv[2], fallback="--no-fallback" not in argv, m4a="--no-m4a" not in argv)
+        for p in r["projects"]: print(p)
+        for f in r["fallback"]:
+            for m in f["missing"]: print(f"  fallback missing: {f['song']} / {m['name']}: {m['reason']}")
+        print(r["running_order"])
     else:
         print(__doc__); sys.exit(1)
 
