@@ -780,5 +780,9 @@
       }
     }
   },
-  "mix": "stems/export/mix.wav"
+  "mix": "stems/export/mix.wav",
+  "options": {
+    "cues": true,
+    "auto_advance": false
+  }
 }
