@@ -1,5 +1,7 @@
 // LLS band-set editor. Vanilla ES module, no build step. Data contract: docs/model.md.
-const $ = (s, el = document) => el.querySelector(s);
+import { Preview } from './preview.js';
+
+const $ =(s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -17,6 +19,17 @@ const RIG_KINDS = ['keys', 'drums', 'guitar', 'bass', 'vocal', 'grid'];
 const RIG_ICON = { keys: '🎹', drums: '🥁', guitar: '🎸', bass: '🎸', vocal: '🎤', grid: '▦' };
 const SEC_COLORS = ['#ff4fa3', '#b452ff', '#4f7dff', '#27d7ff', '#2ee6c0', '#ffb23d', '#ff8a3d', '#8c7dff'];
 const PLAYBACK_ZONES = [['backing-audio', 'Backing audio'], ['midi-clip', 'MIDI clips'], ['audio-loop', 'Audio loops'], ['click', 'Click'], ['dropped', 'Dropped']];
+const LAPTOP = new Set(['backing-audio', 'audio-loop', 'midi-clip']);   // what the laptop plays (= preview "Lineup backing")
+const VIEW_IDS = ['arrange', 'lineup', 'band', 'setlists', 'import'];
+const SONG_VIEWS = new Set(['arrange', 'lineup', 'band']);
+// Logic export steps (README "Export from Logic"): shown as a checklist on the Import view.
+const EXPORT_STEPS = [
+  ['copy', 'Work on a copy of the project, never the original (the importer also clones it before reading).'],
+  ['tracks', 'File → Export → All Tracks as Audio Files…: WAVE, 24-bit, Normalize off, Bypass Effect Plug-ins off, Include Volume/Pan Automation on, range “Extend File Length to Project End”.'],
+  ['mix', 'File → Bounce → Project: the full mix, 24-bit WAV.'],
+  ['aux', 'Aux returns (reverb/delay): create tracks for the aux strips and export them too, otherwise the backing loses its send FX.'],
+  ['folder', 'Put everything in one folder, then choose it below as the export folder.'],
+];
 
 const pref = {
   get(k, d) { try { const v = localStorage.getItem('lls.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -25,10 +38,16 @@ const pref = {
 
 const S = {
   songs: [], slug: null, song: null, saved: '', band: null, bandSaved: '', activity: null,
-  lineupId: 'default', view: ['arrange', 'lineup', 'band'].includes(location.hash.slice(1)) ? location.hash.slice(1) : pref.get('view', 'arrange'), side: pref.get('side', 'checks'),
+  lineupId: 'default', view: VIEW_IDS.includes(location.hash.slice(1)) ? location.hash.slice(1) : pref.get('view', 'arrange'), side: pref.get('side', 'checks'),
   selSec: null, renaming: null, highlight: null, zoom: 0,
   hist: [], fut: [], issues: [], vState: 'idle', vMsg: '', shellKey: '',
+  imp: null,                                                   // Import view state
+  sls: [], slSlug: pref.get('setlist', null), sl: null, slSaved: '', slJob: null, slResult: null, slErr: '',
+  pv: { mode: pref.get('pv.mode', 'lineup'), click: pref.get('pv.click', false), vol: pref.get('pv.vol', 0.8),
+        loop: null, solo: new Set(), mute: new Set(), state: {} },
+  tlW: 0,
 };
+if (S.view === 'import') S.view = 'arrange';  // the import view needs a mode; open it from the song picker
 
 // ---------------------------------------------------------------- API
 async function api(method, path, body) {
@@ -187,7 +206,7 @@ function fixRefs() {
   if (!S.song.lineups[S.lineupId]) S.lineupId = Object.keys(S.song.lineups)[0];
   // keep S.selSec even if undo removed it: redo brings it back, and every use checks secById first
 }
-function changed() { render(); scheduleValidate(); }
+function changed() { render(); scheduleValidate(); pvRestartSoon(); }
 
 // ---------------------------------------------------------------- activity
 function secActivity(pid, sec) {
@@ -207,12 +226,15 @@ async function init() {
   S.bandSaved = JSON.stringify(S.band);
   const want = pref.get('song', null);
   const slug = S.songs.find((s) => s.slug === want)?.slug || S.songs[0]?.slug;
-  if (!slug) { renderTop(); $('#main').innerHTML = '<div class="empty-state"><b>No songs yet.</b><br>Run <code>python -m lls ingest &lt;project.logicx&gt; songs/&lt;slug&gt;</code> first.</div>'; return; }
-  await loadSong(slug);
+  if (slug) await loadSong(slug); else render();
+  if (S.view === 'setlists') loadSetlists();
 }
+
+async function refreshSongs() { S.songs = await api('GET', '/songs'); renderTop(); }
 
 async function loadSong(slug) {
   const [song, activity] = await Promise.all([api('GET', `/songs/${slug}`), api('GET', `/songs/${slug}/activity`).catch(() => null)]);
+  if (slug !== S.slug) { PV.reset(); S.pv.solo.clear(); S.pv.mute.clear(); S.pv.loop = null; }
   S.slug = slug; S.song = normalize(song); S.saved = JSON.stringify(S.song); S.activity = activity;
   S.hist = []; S.fut = []; S.selSec = null; S.highlight = null; S.shellKey = '';
   const lids = Object.keys(S.song.lineups);
@@ -277,7 +299,10 @@ function render() { renderTop(); renderMain(); renderSide(); }
 
 function renderTop() {
   const ss = $('#song-select');
-  ss.innerHTML = S.songs.map((s) => `<option value="${esc(s.slug)}" ${s.slug === S.slug ? 'selected' : ''}>${esc(s.title)}</option>`).join('');
+  ss.innerHTML = (S.song ? '' : '<option value="" selected disabled>No song</option>')
+    + S.songs.map((s) => `<option value="${esc(s.slug)}" ${s.slug === S.slug ? 'selected' : ''}>${esc(s.title)}</option>`).join('')
+    + '<option disabled>──────────</option><option value="__new">+ New song…</option>'
+    + (S.song ? `<option value="__reimport">↻ Re-import / Link stems…</option>` : '');
   const ls = $('#lineup-select');
   ls.innerHTML = S.song ? Object.entries(S.song.lineups).map(([id, lu]) =>
     `<option value="${esc(id)}" ${id === S.lineupId ? 'selected' : ''}>${esc(lu.name || id)}</option>`).join('') : '';
@@ -292,8 +317,14 @@ function renderTop() {
 }
 
 function renderMain() {
-  if (!S.song) return;
-  const main = $('#main'), key = S.view + '|' + S.slug;
+  const main = $('#main');
+  if (SONG_VIEWS.has(S.view) && !S.song) {
+    S.shellKey = '';
+    main.innerHTML = `<div class="empty-state"><b>No songs yet.</b><p>Export your Logic project's stems, then import it here.</p>
+      <button class="btn primary" data-act="new-song">+ New song</button></div>`;
+    return;
+  }
+  const key = S.view + '|' + S.slug;
   const focusPart = document.activeElement?.closest?.('[data-part]')?.dataset.part;
   if (S.shellKey !== key) { main.innerHTML = VIEWS[S.view].shell(); S.shellKey = key; }
   VIEWS[S.view].fill();
@@ -340,7 +371,15 @@ VIEWS.arrange = {
       <button class="btn small" data-act="vamp" title="Toggle vamp/loop on the selected section (V)">Vamp</button>
       <span class="sep"></span>
       <label class="hint" title="Zoom (0 = fit)">Zoom <input type="range" id="zoom" min="0" max="48" step="2" value="${S.zoom}"></label>
+      <span class="sep"></span>
+      <span class="lbl">Set</span>
+      <button class="ptog" data-act="opt" data-opt="cues" title="Spoken section cues on the click output, one bar before each section (song.json options.cues)">Cues</button>
+      <button class="ptog" data-act="opt" data-opt="auto_advance" title="Scenes follow on to the next section automatically (vamp sections hold) — options.auto_advance">Auto-advance</button>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn small" data-act="reimport" title="Re-import the Logic project and/or link newly exported stems">↻ Re-import</button>
     </div>
+    <div class="toolbar transport" id="transport"></div>
+    <div class="toolbar inspector" id="inspector" hidden></div>
     <div class="tl" id="tl"><div class="tl-inner" id="tl-inner"></div></div>`,
   fill() {
     const song = S.song, bp = bpb(), total = totalBeats(), nb = Math.ceil(total / bp);
@@ -349,8 +388,12 @@ VIEWS.arrange = {
     const avail = Math.max(200, tl.clientWidth - hdr - 2);
     const W = S.zoom ? nb * S.zoom : Math.max(avail, nb * 5);
     const ppb = W / nb, pct = (b) => (b / total) * 100;
+    S.tlW = W;
     $('#meta').innerHTML = `<b>${esc(song.title)}</b>${song.tempo} bpm · ${(song.time_signature || [4, 4]).join('/')} · ${nb} bars · ${song.sections.length} sections · ${song.parts.length} parts`;
     for (const b of $$('[data-act=split],[data-act=merge],[data-act=vamp]')) b.disabled = !secById(S.selSec);
+    const opts = song.options || {};
+    for (const b of $$('[data-act=opt]')) b.setAttribute('aria-pressed', String(!!opts[b.dataset.opt]));
+    renderTransport(); renderInspector();
 
     // ruler
     const every = ppb >= 26 ? 1 : ppb >= 13 ? 2 : ppb >= 6.5 ? 4 : 8;
@@ -367,7 +410,7 @@ VIEWS.arrange = {
       const bars = Math.round((s.end - s.start) / bp);
       const inner = S.renaming === s.id
         ? `<input id="rename" value="${esc(s.name)}" aria-label="Section name">`
-        : `<span class="sname">${esc(s.name)}</span>${s.vamp ? '<span class="vamp" title="vamp">∞</span>' : ''}<span class="sbars">${bars}b</span>`;
+        : `<span class="sname">${esc(s.name)}</span>${s.vamp ? '<span class="vamp" title="vamp">∞</span>' : ''}${s.cue ? `<span class="cue-mk" title="cue: “${esc(s.cue)}”">❝</span>` : ''}${S.pv.loop === s.id ? '<span class="loop-mk" title="preview loops this section">⟲</span>' : ''}<span class="sbars">${bars}b</span>`;
       secs += `<div class="sec ${S.selSec === s.id ? 'sel' : ''} ${hl.section === s.id ? 'hl' : ''}" data-sid="${esc(s.id)}"
         style="left:${pct(s.start)}%;width:${pct(s.end - s.start)}%;--sc:${SEC_COLORS[i % SEC_COLORS.length]}"
         title="${esc(s.name)} · bar ${s.start / bp + 1}–${s.end / bp + 1}">${inner}</div>`;
@@ -395,23 +438,166 @@ VIEWS.arrange = {
           style="left:${pct(s.start)}%;width:${pct(s.end - s.start)}%;--tc:var(--t-${t})"
           title="${esc(p.name)} · ${esc(s.name)}: ${esc(TLABEL[t])}${ov[s.id] ? ' (override)' : ''}${act === null ? ' · activity unknown' : act ? '' : ' · silent'}"><div class="bars">${bars}</div></div>`;
       }
-      rows += `<div class="trow part ${hl.part === p.id ? 'hl' : ''}" data-part="${esc(p.id)}">
+      const aud = pvAudible(p);
+      rows += `<div class="trow part ${hl.part === p.id ? 'hl' : ''} ${aud ? '' : 'pv-off'}" data-part="${esc(p.id)}">
         <div class="ph" data-part="${esc(p.id)}" data-droppart="1">
           <span class="issue-dot"></span>
           <div class="pmeta"><span class="pname" title="${esc(p.name)} (${esc(p.id)})">${esc(p.name)}</span>${instBadge(p)}</div>
           ${whoLabel(p.id)}
+          <span class="sm" title="${esc(aud ? 'Preview: solo / mute' : pvWhyOff(p))}"><button class="smb ${S.pv.solo.has(p.id) ? 'on' : ''}" data-act="solo" data-part="${esc(p.id)}" tabindex="-1" aria-label="Solo ${esc(p.name)}">S</button><button class="smb m ${S.pv.mute.has(p.id) ? 'on' : ''}" data-act="mute" data-part="${esc(p.id)}" tabindex="-1" aria-label="Mute ${esc(p.name)}">M</button></span>
           ${chip(lt, `draggable="true" data-drag-t="${lt}" data-act="tmenu" data-part="${esc(p.id)}" title="Treatment in this lineup — click to change, drag onto a cell to override one section"`)}
         </div>
         <div class="lane" style="width:${W}px">${cells}</div></div>`;
     }
     $('#tl-inner').innerHTML = `
-      <div class="trow head"><div class="ph">Bar</div><div class="lane" style="width:${W}px">${ruler}</div></div>
+      <div class="playhead" id="playhead"></div>
+      <div class="trow head"><div class="ph">Bar</div><div class="lane" id="ruler" style="width:${W}px" title="Click to move the playhead">${ruler}</div></div>
       <div class="trow secs"><div class="ph" title="⌥-click a section to split at a bar · drag edges to move · double-click to rename · right-click for more">Sections <span class="hint" style="margin-left:auto">${esc(lineup().name)}</span></div><div class="lane" id="sec-lane" style="width:${W}px">${secs}</div></div>
       ${rows}`;
     const ri = $('#rename');
     if (ri) { ri.focus(); ri.select(); }
+    drawPlayhead();
   },
 };
+
+// ---------- preview playback (Web Audio; see preview.js)
+const PV = new Preview((st) => { S.pv.state = st; if (S.view === 'arrange' && $('#transport')) renderTransport(); });
+const spb = () => 60 / S.song.tempo;
+const songSecs = () => totalBeats() * spb();
+const stemOf = (p) => p.stem || p.raw_stem;
+
+function pvAudible(p) {
+  if (!stemOf(p)) return false;
+  if (S.pv.mode === 'full') return true;
+  return S.song.sections.some((s) => LAPTOP.has(effT(p, s.id)));
+}
+function pvWhyOff(p) {
+  if (!stemOf(p)) return p.kind === 'midi' ? 'No stem: MIDI-only, not in the preview (export its stem from Logic)' : 'No stem';
+  return `Not played by the laptop in “${lineup().name}” (${TLABEL[lineupT(p)]})`;
+}
+
+function pvPlan() {
+  const song = S.song, k = spb(), sources = [];
+  const url = (pid) => `/api/songs/${encodeURIComponent(S.slug)}/stem/${encodeURIComponent(pid)}`;
+  const anySM = S.pv.solo.size || S.pv.mute.size;
+  if (S.pv.mode === 'full' && song.mix && !anySM) sources.push({ key: S.slug + '/_mix', url: url('_mix'), pid: '_mix', windows: null });
+  else {
+    for (const p of song.parts) {
+      if (!stemOf(p)) continue;
+      if (S.pv.mode === 'full') { sources.push({ key: `${S.slug}/${p.id}`, url: url(p.id), pid: p.id, windows: null }); continue; }
+      const wins = song.sections.filter((s) => LAPTOP.has(effT(p, s.id))).map((s) => [s.start * k, s.end * k]);
+      if (wins.length) sources.push({ key: `${S.slug}/${p.id}`, url: url(p.id), pid: p.id, windows: wins });
+    }
+  }
+  const ls = S.pv.loop && secById(S.pv.loop);
+  return { sources, loop: ls ? { a: ls.start * k, b: ls.end * k } : null, tempo: song.tempo, bpb: bpb(), total: songSecs() };
+}
+
+function pvGain(pid) {
+  if (pid === '_mix') return 1;
+  if (S.pv.mute.has(pid)) return 0;
+  return S.pv.solo.size && !S.pv.solo.has(pid) ? 0 : 1;
+}
+
+function pvPlay(from = PV.pos()) {
+  if (!S.song) return;
+  const plan = pvPlan();
+  if (!plan.sources.length) { toast(S.pv.mode === 'full' ? 'No stems or mix linked yet — Re-import → link stems' : 'Nothing in this lineup plays from the laptop (or no stems linked)'); return; }
+  PV.setGains(pvGain); PV.setClick(S.pv.click); PV.setVolume(S.pv.vol);
+  PV.play(from, plan);
+  pvAnimate();
+}
+function pvToggle() { if (PV.playing || PV.preparing) { PV.stop(); renderTransport(); drawPlayhead(); } else pvPlay(); }
+function pvFromSection(sid) { const s = secById(sid); if (s) pvPlay(s.start * spb()); }
+function pvLoop(sid) {
+  S.pv.loop = S.pv.loop === sid ? null : sid;
+  if (S.pv.loop) { S.selSec = sid; pvPlay(secById(sid).start * spb()); } else if (PV.playing) pvPlay(PV.pos());
+  renderMain();
+}
+let pvRestartT = 0;
+function pvRestartSoon() {
+  if (!PV.playing) return;
+  clearTimeout(pvRestartT); pvRestartT = setTimeout(() => { if (PV.playing) pvPlay(PV.pos()); }, 150);
+}
+function pvSoloMute(kind, pid) {
+  const set = S.pv[kind];
+  if (set.has(pid)) set.delete(pid); else set.add(pid);
+  const needsStems = S.pv.mode === 'full' && S.song.mix;
+  if (PV.playing && needsStems) pvPlay(PV.pos()); else PV.setGains(pvGain);
+  renderMain();
+}
+
+let pvRaf = 0;
+function pvAnimate() {
+  cancelAnimationFrame(pvRaf);
+  const step = () => { drawPlayhead(); updateClock(); if (PV.playing || PV.preparing) pvRaf = requestAnimationFrame(step); };
+  pvRaf = requestAnimationFrame(step);
+}
+function drawPlayhead() {
+  const ph = $('#playhead'); if (!ph || !S.song) return;
+  const frac = clamp(PV.pos() / songSecs(), 0, 1);
+  ph.style.transform = `translateX(${(frac * S.tlW).toFixed(1)}px)`;
+  ph.classList.toggle('on', PV.playing);
+}
+function fmtPos(sec) {
+  const beats = sec / spb(), bp = bpb();
+  const bar = Math.floor(beats / bp) + 1, beat = Math.floor(beats % bp) + 1;
+  return `${bar}.${beat} · ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+}
+function updateClock() { const c = $('#pv-clock'); if (c && S.song) c.textContent = fmtPos(PV.pos()); }
+
+function renderTransport() {
+  const el = $('#transport'); if (!el || !S.song) return;
+  const st = S.pv.state || {}, plan = pvPlan(), sel = secById(S.selSec), lp = S.pv.loop && secById(S.pv.loop);
+  const loaded = plan.sources.filter((s) => PV.status(s.key) === 'ok').length;
+  const errs = plan.sources.filter((s) => PV.status(s.key) === 'err');
+  const silent = S.pv.mode === 'lineup' ? S.song.parts.filter((p) => !stemOf(p) && S.song.sections.some((s) => LAPTOP.has(effT(p, s.id)))) : [];
+  let status;
+  if (st.preparing || st.loading) status = `<span class="spin sm"></span> Loading stems ${loaded}/${plan.sources.length}…`;
+  else if (!plan.sources.length) status = S.pv.mode === 'full' ? 'No stems linked yet' : 'Nothing plays from the laptop in this lineup';
+  else status = `${plan.sources.length === 1 && plan.sources[0].pid === '_mix' ? 'full mix bounce' : `${plan.sources.length} stem${plan.sources.length === 1 ? '' : 's'}`}${loaded < plan.sources.length ? ` · ${loaded} loaded` : ''}`;
+  const warn = [errs.length ? `<span class="pv-err" title="${esc(errs.map((s) => `${s.pid}: ${PV.error(s.key)}`).join('\n'))}">⚠ ${errs.length} failed</span>` : '',
+    silent.length ? `<span class="pv-warn" title="${esc(silent.map((p) => p.name).join(', '))} — MIDI-only, no stem: silent in the preview (Live plays them)">${silent.length} MIDI-only silent</span>` : ''].join('');
+  const playing = PV.playing || st.preparing;
+  el.innerHTML = `
+    <button class="btn icon tp ${playing ? 'on' : ''}" data-act="pv-toggle" title="${playing ? 'Stop' : 'Play'} (Space)" aria-label="${playing ? 'Stop' : 'Play'}">${playing ? '■' : '▶'}</button>
+    <button class="btn small" data-act="pv-from" ${sel ? '' : 'disabled'} title="Play from the selected section (P)">▶ ${esc(sel ? sel.name : 'section')}</button>
+    <button class="btn small ${lp ? 'act' : ''}" data-act="pv-loop" ${sel || lp ? '' : 'disabled'} title="Loop the selected section (L)">⟲ ${lp ? 'Looping ' + esc(lp.name) : 'Loop'}</button>
+    <button class="btn icon small" data-act="pv-zero" title="Back to bar 1 (Home)" aria-label="Back to start">⇤</button>
+    <span class="pv-clock" id="pv-clock">${fmtPos(PV.pos())}</span>
+    <span class="sep"></span>
+    <div class="seg" role="group" aria-label="Preview mode">
+      <button data-act="pv-mode" data-mode="lineup" aria-pressed="${S.pv.mode === 'lineup'}" title="What the laptop plays in “${esc(lineup().name)}”: backing audio, audio loops, and MIDI clips that have a stem">Lineup backing</button>
+      <button data-act="pv-mode" data-mode="full" aria-pressed="${S.pv.mode === 'full'}" title="The whole song: the full-mix bounce if linked (stems when soloing/muting), else every stem">Full song</button>
+    </div>
+    <button class="ptog" data-act="pv-click" aria-pressed="${S.pv.click}" title="Click from the song tempo">Click</button>
+    <label class="hint" title="Preview volume">Vol <input type="range" id="pv-vol" min="0" max="1" step="0.05" value="${S.pv.vol}"></label>
+    ${S.pv.solo.size || S.pv.mute.size ? `<button class="btn small" data-act="pv-clear" title="Clear solo/mute">Clear S/M</button>` : ''}
+    <span class="pv-status">${status}${warn}</span>
+    <span class="hint pv-note" title="Rehearsal aid only. On stage the set runs in Ableton Live.">preview · Live runs the show</span>`;
+}
+
+function renderInspector() {
+  const el = $('#inspector'); if (!el) return;
+  const s = secById(S.selSec);
+  el.hidden = !s;
+  if (!s) { el.innerHTML = ''; return; }
+  const bp = bpb(), cuesOn = !!(S.song.options || {}).cues;
+  if (el.dataset.sid === s.id && el.contains(document.activeElement)) {   // don't clobber the field being typed in
+    $('[data-act=sec-vamp]', el)?.setAttribute('aria-pressed', String(!!s.vamp)); return;
+  }
+  el.dataset.sid = s.id;
+  el.innerHTML = `
+    <span class="lbl">Section</span>
+    <input class="inp" style="width:150px" data-sec="name" value="${esc(s.name)}" aria-label="Section name">
+    <span class="song-meta">bar ${s.start / bp + 1}–${s.end / bp + 1} · ${Math.round((s.end - s.start) / bp)} bars</span>
+    <span class="sep"></span>
+    <label class="lbl" for="sec-cue">Cue text</label>
+    <input class="inp" id="sec-cue" style="width:200px" data-sec="cue" value="${esc(s.cue || '')}" placeholder="${esc(s.name)} (spoken)" aria-label="Cue text override">
+    <span class="hint">${cuesOn ? 'spoken one bar before the section' : 'cues are off for this song (toggle Cues above)'}</span>
+    <span class="sep"></span>
+    <button class="ptog" data-act="sec-vamp" aria-pressed="${!!s.vamp}" title="Vamp: the scene loops until you launch the next one (V)">∞ Vamp</button>`;
+}
 
 // ---------- Lineup board
 function boardPlacement() {
@@ -493,6 +679,287 @@ VIEWS.lineup = {
     void lu;
   },
 };
+
+// ---------- Import view (new song / re-import + link stems)
+const baseName = (p) => String(p || '').replace(/\/+$/, '').split('/').pop().replace(/\.logicx$/i, '');
+
+function openImport(mode) {
+  if (S.imp?.job && S.imp.state === 'running') { setView('import'); return; }
+  const src = (mode === 're' && S.song?.source) || {};
+  S.imp = {
+    mode, slug: mode === 're' ? S.slug : '', slugTouched: mode === 're',
+    logicx: mode === 're' ? (src.original || src.logicx || '') : '', exportDir: mode === 're' ? (src.export_dir || '') : '',
+    job: null, lines: [], state: 'idle', step: '', result: null, error: '', checks: pref.get('exportChecks', {}),
+  };
+  setView('import');
+}
+
+VIEWS.import = {
+  shell: () => `
+    <div class="toolbar"><b id="imp-title"></b><span class="hint" id="imp-sub"></span>
+      <span class="spacer" style="flex:1"></span>
+      ${S.song ? '<button class="btn small" data-act="imp-back">← Back to song</button>' : ''}</div>
+    <div class="imp" id="imp"></div>`,
+  fill() {
+    const I = S.imp;
+    if (!I) { $('#imp').innerHTML = '<div class="empty-state">Choose “+ New song” or “Re-import” from the song picker.</div>'; return; }
+    const re = I.mode === 're', running = I.state === 'running';
+    $('#imp-title').textContent = re ? `Re-import · ${S.song?.title || I.slug}` : 'New song';
+    $('#imp-sub').textContent = re ? 'Re-ingest keeps your section names, treatments and lineups' : 'Logic project → song model → stems';
+    const btnLabel = re ? (I.logicx && I.exportDir ? 'Re-import + link stems' : I.logicx ? 'Re-import' : 'Link stems') : (I.exportDir ? 'Import + link stems' : 'Import');
+    const form = `
+      <section class="fcard imp-form">
+        <h3><span class="stepn">1</span> Logic project</h3>
+        <label class="field">Project (.logicx)
+          <div class="frow nowrap"><input class="inp mono grow" data-imp="logicx" value="${esc(I.logicx)}" placeholder="/Users/you/Music/Logic/Song.logicx" ${running ? 'disabled' : ''} spellcheck="false">
+          <button class="btn" data-act="pick" data-kind="logicx" ${running ? 'disabled' : ''}>Browse…</button></div></label>
+        <div class="hint">The importer makes an APFS clone into <code>samples/${esc(I.slug || '&lt;slug&gt;')}.logicx</code> and reads only that copy. Your original is never opened by Logic or modified.${re ? ' Leave empty to only link stems.' : ''}</div>
+        <label class="field">Song slug
+          <div class="frow nowrap"><input class="inp mono" style="width:240px" data-imp="slug" value="${esc(I.slug)}" placeholder="auto from the project name" ${re || running ? 'disabled' : ''} spellcheck="false">
+          <span class="hint">→ songs/${esc(I.slug || '…')}/</span></div></label>
+        <h3><span class="stepn">2</span> Exported stems <span class="hint">optional now, needed for backing tracks</span></h3>
+        <label class="field">Logic export folder
+          <div class="frow nowrap"><input class="inp mono grow" data-imp="exportDir" value="${esc(I.exportDir)}" placeholder="/Users/you/Desktop/Song exports" ${running ? 'disabled' : ''} spellcheck="false">
+          <button class="btn" data-act="pick" data-kind="folder" ${running ? 'disabled' : ''}>Browse…</button></div></label>
+        <div class="frow"><button class="btn primary" data-act="imp-go" ${running ? 'disabled' : ''}>${esc(btnLabel)}</button>
+          ${I.error && I.state !== 'error' ? `<div class="err-box">${esc(I.error)}</div>` : ''}</div>
+      </section>`;
+    const done = Object.values(I.checks).filter(Boolean).length;
+    const check = `
+      <section class="fcard imp-check">
+        <h3>Export from Logic first <span class="count ${done === EXPORT_STEPS.length ? 'ok' : ''}">${done}/${EXPORT_STEPS.length}</span></h3>
+        <ol class="checklist">${EXPORT_STEPS.map(([k, t]) => `<li><label><input type="checkbox" data-check="${k}" ${I.checks[k] ? 'checked' : ''}><span>${esc(t)}</span></label></li>`).join('')}</ol>
+        <div class="hint">Stems are matched to Logic tracks by name; anything that doesn't match becomes a new backing part, and the bounce becomes the song's full mix.</div>
+      </section>`;
+    $('#imp').innerHTML = `<div class="imp-top">${form}${check}</div>${jobHtml(I, 'Import')}${I.result ? importResultHtml(I.result) : ''}`;
+    const log = $('#imp .joblog'); if (log) log.scrollTop = log.scrollHeight;
+  },
+};
+
+function jobHtml(J, what) {
+  if (!J.job && J.state !== 'error') return '';
+  const steps = J.lines.filter((l) => l.startsWith('▸ ')).map((l) => l.slice(2));
+  const last = steps.length - 1;
+  return `<section class="fcard jobcard">
+    <h3>${J.state === 'running' ? '<span class="spin"></span>' : J.state === 'done' ? '<span class="ok-mark">✓</span>' : '<span class="bad-mark">✕</span>'}
+      ${esc(what)} ${J.state === 'running' ? 'running…' : J.state === 'done' ? 'finished' : 'failed'}<span class="hint">${J.elapsed != null ? J.elapsed + ' s' : ''}</span></h3>
+    <div class="steps">${steps.map((s, i) => `<span class="stp ${i < last || J.state === 'done' ? 'done' : J.state === 'error' ? 'bad' : 'cur'}">${esc(s)}</span>`).join('<span class="arrow">→</span>')}</div>
+    ${J.error && J.state === 'error' ? `<div class="err-box">${esc(J.error)}</div>` : ''}
+    <details ${J.state !== 'done' ? 'open' : ''}><summary class="lbl">Log · ${J.lines.length} lines</summary><pre class="md joblog">${esc(J.lines.join('\n'))}</pre></details>
+  </section>`;
+}
+
+function pollJob(J, onDone) {
+  const tick = async () => {
+    try {
+      const j = await api('GET', `/jobs/${J.job}?since=${J.lines.length}`);
+      J.lines.push(...j.lines); J.state = j.state; J.step = j.step; J.elapsed = j.elapsed;
+      if (j.state === 'running') { J.timer = setTimeout(tick, 400); }
+      else { J.error = j.error || ''; await onDone(j); }
+    } catch (e) { J.state = 'error'; J.error = e.message; }
+    if (S.view === 'import' || S.view === 'setlists') renderMain();
+  };
+  tick();
+}
+
+async function startImport() {
+  const I = S.imp;
+  I.error = '';
+  if (I.mode === 're' && S.slug === I.slug && dirty()) { await save(); if (dirty()) return; }
+  if (!I.slug && I.logicx) I.slug = slugify(baseName(I.logicx));
+  try {
+    const r = await api('POST', '/import', { logicx: I.logicx.trim() || null, slug: I.slug, export_dir: I.exportDir.trim() || null, reimport: I.mode === 're' });
+    Object.assign(I, { job: r.job, lines: [], state: 'running', result: null });
+  } catch (e) { I.error = e.message; renderMain(); return; }
+  renderMain();
+  pollJob(I, async (j) => {
+    if (j.state !== 'done') return;
+    I.result = j.result;
+    await refreshSongs();
+    if (I.slug === S.slug) await loadSong(I.slug);  // pick up re-imported changes
+    toast(`${j.result.title}: imported`);
+  });
+}
+
+function importResultHtml(r) {
+  const bp = (r.time_signature || [4, 4])[0] * 4 / (r.time_signature || [4, 4])[1];
+  const kinds = { audio: 0, midi: 0 }, al = r.parts.filter((p) => p.instrument === 'analoglab').length;
+  for (const p of r.parts) kinds[p.kind] = (kinds[p.kind] || 0) + 1;
+  const link = r.link || [];
+  const by = (st) => link.filter((x) => x.status === st);
+  const linkGroup = (st, title, cls) => {
+    const xs = by(st);
+    if (!xs.length) return '';
+    return `<div class="lgrp ${cls}"><div class="h">${esc(title)} · ${xs.length}</div>${xs.map((x) => `<div class="lrow"><span class="n">${esc(x.file)}</span><span class="d">${esc(x.what)}</span></div>`).join('')}</div>`;
+  };
+  const stemTxt = (p) => p.stem ? '<span class="ok-mark">exported stem</span>' : p.raw_stem ? '<span class="hint">raw stem (no FX)</span>'
+    : p.kind === 'midi' && p.instrument === 'analoglab' ? '<span class="hint">MIDI (Analog Lab plays it)</span>' : '<span class="bad">no stem</span>';
+  const missing = (r.ignored_tracks || []).filter((t) => t.status === 'MISSING').length;
+  return `<section class="fcard result">
+    <h3><span class="ok-mark">✓</span> ${esc(r.title)} <span class="hint">songs/${esc(r.slug)}/</span>
+      <span class="spacer" style="flex:1"></span><button class="btn primary" data-act="imp-open" data-slug="${esc(r.slug)}">Open song →</button></h3>
+    <div class="song-meta">${r.tempo} bpm · ${(r.time_signature || [4, 4]).join('/')} · ${Math.ceil((r.length_beats || 0) / bp)} bars ·
+      ${r.sections.length} sections · ${r.parts.length} parts (${kinds.audio || 0} audio, ${kinds.midi || 0} MIDI, ${al} Analog Lab) · full mix: ${r.mix ? 'yes' : 'no'}</div>
+    <div class="h">Sections</div>
+    <div class="secchips">${r.sections.map((s, i) => `<span class="secchip" style="--sc:${SEC_COLORS[i % SEC_COLORS.length]}">${esc(s.name)} <i>${Math.round((s.end - s.start) / bp)}b</i></span>`).join('')}</div>
+    <div class="res-grid">
+      <div><div class="h">Parts · ${r.parts.length}</div>
+        <table class="report">${r.parts.map((p) => `<tr><td>${esc(p.name)}${p.origin ? ' <span class="pill">export-only</span>' : ''}</td>
+          <td>${chip(p.default_treatment, 'tabindex="-1"', 'mini')}</td><td>${stemTxt(p)}</td></tr>`).join('')}</table></div>
+      <div>
+        <div class="h">Link stems ${r.link ? '' : '· not run (no export folder)'}</div>
+        ${r.link ? linkGroup('matched', 'Matched', 'good') + linkGroup('mix', 'Full mix', 'good') + linkGroup('new', 'NEW parts (no Logic track matched: check them)', 'warn') + linkGroup('missing', '⚠ Missing stems', 'bad') : '<div class="panel-note">Choose the export folder and run “Link stems” to attach the exported audio.</div>'}
+        <div class="h">Accounted for · not imported as parts · ${(r.ignored_tracks || []).length}${missing ? ` <span class="count err">${missing} MISSING</span>` : ''}</div>
+        ${(r.ignored_tracks || []).map((t) => `<div class="fate ${t.status === 'MISSING' ? 'missing' : ''}" style="cursor:default"><span class="n">${esc(t.name)}</span><span class="pill ${esc(t.status)}">${esc(t.status)}</span><span class="d">${esc(t.reason)}</span></div>`).join('') || '<div class="panel-note">Every Logic track became a part.</div>'}
+        ${(r.warnings || []).length ? `<details class="warnings"><summary>Ingest warnings (${r.warnings.length})</summary>${r.warnings.map((x) => `<p>${esc(x)}</p>`).join('')}</details>` : ''}
+      </div>
+    </div>
+  </section>`;
+}
+
+async function pickPath(kind) {
+  try {
+    const r = await api('POST', '/pick', { kind });
+    if (r.cancelled) return;
+    if (kind === 'logicx') {
+      S.imp.logicx = r.path;
+      if (!S.imp.slugTouched) S.imp.slug = slugify(baseName(r.path));
+    } else S.imp.exportDir = r.path;
+    renderMain();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- Setlists
+const slDirty = () => !!S.sl && JSON.stringify(S.sl) !== S.slSaved;
+const songInfo = (slug) => S.songs.find((s) => s.slug === slug);
+
+async function loadSetlists(open = S.slSlug) {
+  try { S.sls = await api('GET', '/setlists'); } catch (e) { S.slErr = e.message; S.sls = []; }
+  const slug = S.sls.find((x) => x.slug === open)?.slug || S.sls[0]?.slug || null;
+  if (slug && (slug !== S.slSlug || !S.sl)) await openSetlist(slug); else if (!slug) { S.sl = null; S.slSlug = null; }
+  renderMain();
+}
+async function openSetlist(slug) {
+  if (slDirty() && !(await confirmDialog('Unsaved setlist', `Discard changes to “${S.sl.name}”?`, 'Discard'))) return;
+  try {
+    S.sl = await api('GET', `/setlists/${slug}`);
+    S.sl.songs ||= [];
+    S.slSlug = slug; S.slSaved = JSON.stringify(S.sl); pref.set('setlist', slug);
+    if (S.slJob?.key !== slug) { S.slJob = null; S.slResult = null; }
+  } catch (e) { toast(e.message, true); }
+  renderMain();
+}
+async function saveSetlist() {
+  if (!S.sl) return false;
+  try {
+    const snap = JSON.stringify(S.sl);
+    await api('PUT', `/setlists/${S.slSlug}`, S.sl);
+    S.slSaved = snap; S.sls = await api('GET', '/setlists'); toast('Setlist saved'); renderMain();
+    return true;
+  } catch (e) { toast('Save failed: ' + e.message, true); return false; }
+}
+async function newSetlist() {
+  const name = await promptDialog('New setlist', 'Name', 'Friday show'); if (!name) return;
+  let slug = slugify(name), n = 2;
+  while (S.sls.some((x) => x.slug === slug)) slug = `${slugify(name)}-${n++}`;
+  try {
+    await api('PUT', `/setlists/${slug}`, { name, band: 'band.json', songs: S.slug ? [{ song: S.slug, lineup: S.lineupId, notes: '' }] : [] });
+    S.sl = null; S.slSaved = ''; await loadSetlists(slug);
+  } catch (e) { toast(e.message, true); }
+}
+async function deleteSetlist() {
+  if (!(await confirmDialog('Delete setlist', `Delete “${S.sl.name}” (setlists/${S.slSlug}.json)? Built output in out/setlists stays.`, 'Delete'))) return;
+  try { await api('DELETE', `/setlists/${S.slSlug}`); S.sl = null; S.slSaved = ''; S.slSlug = null; await loadSetlists(null); } catch (e) { toast(e.message, true); }
+}
+function slEdit(fn) { fn(); renderMain(); }
+function slMove(i, d) {
+  const xs = S.sl.songs, j = i + d;
+  if (j < 0 || j >= xs.length) return;
+  slEdit(() => { const [x] = xs.splice(i, 1); xs.splice(j, 0, x); });
+  $(`.sl-row[data-i="${j}"]`)?.focus();
+}
+async function buildShow() {
+  if (!S.sl) return;
+  if (!S.sl.songs.length) { toast('Add songs to the setlist first'); return; }
+  if (dirty() || bandDirty()) { await save(); if (dirty() || bandDirty()) return; }
+  if (slDirty() && !(await saveSetlist())) return;
+  S.slResult = null;
+  try {
+    const r = await api('POST', `/setlists/${S.slSlug}/build`);
+    S.slJob = { job: r.job, key: S.slSlug, lines: [], state: 'running' };
+  } catch (e) { toast(e.message, true); return; }
+  renderMain();
+  const J = S.slJob;
+  pollJob(J, async (j) => { if (j.state === 'done') { J.result = j.result; S.slResult = j.result; S.sls = await api('GET', '/setlists'); toast('Show built'); } });
+}
+async function reveal(path) {
+  try { await api('POST', '/reveal', { path }); } catch (e) { toast(e.message, true); }
+}
+
+VIEWS.setlists = {
+  shell: () => `
+    <div class="toolbar"><b>Setlists</b><span class="hint">setlists/*.json · Build show = one Live set per song in show order, running order, phone fallback</span>
+      <span class="spacer" style="flex:1"></span><button class="btn small" data-act="sl-new">+ New setlist</button></div>
+    <div class="sl-wrap"><nav class="sl-list" id="sl-list" aria-label="Setlists"></nav><div class="sl-main" id="sl-main"></div></div>`,
+  fill() {
+    $('#sl-list').innerHTML = S.sls.map((x) => `<button class="sl-item ${x.slug === S.slSlug ? 'cur' : ''}" data-act="sl-open" data-slug="${esc(x.slug)}">
+        <span class="n">${esc(x.name)}${x.slug === S.slSlug && slDirty() ? ' <span class="dirty-dot">●</span>' : ''}</span><span class="d">${x.songs} song${x.songs === 1 ? '' : 's'}${x.built ? ' · built' : ''}${x.error ? ' · ⚠' : ''}</span></button>`).join('')
+      || `<div class="panel-note">No setlists yet.${S.slErr ? `<div class="err-box">${esc(S.slErr)}</div>` : ''}</div>`;
+    const m = $('#sl-main');
+    if (!S.sl) { m.innerHTML = '<div class="empty-state">Create a setlist to order songs for a show.<br><br><button class="btn primary" data-act="sl-new">+ New setlist</button></div>'; return; }
+    if (m.contains(document.activeElement) && document.activeElement.matches('input[data-sl], textarea[data-sl]')) {
+      $('#sl-save').disabled = !slDirty(); return;  // keep typing focus; structure didn't change
+    }
+    const sl = S.sl, running = S.slJob?.state === 'running' && S.slJob.key === S.slSlug;
+    const rows = sl.songs.map((e, i) => {
+      const info = songInfo(e.song), lus = info?.lineups || [];
+      const lid = e.lineup || 'default';
+      return `<div class="sl-row" draggable="true" tabindex="0" data-i="${i}" data-slrow="${i}" title="Drag to reorder · ⌥↑/⌥↓ to move">
+        <span class="grip" aria-hidden="true">⋮⋮</span><span class="num">${String(i + 1).padStart(2, '0')}</span>
+        <select class="inp" data-sl="song" data-i="${i}" aria-label="Song">${S.songs.map((s) => `<option value="${esc(s.slug)}" ${s.slug === e.song ? 'selected' : ''}>${esc(s.title)}</option>`).join('')}${info ? '' : `<option selected>${esc(e.song)} (missing)</option>`}</select>
+        <select class="inp" data-sl="lineup" data-i="${i}" aria-label="Lineup">${(lus.includes(lid) ? lus : [lid, ...lus]).map((l) => `<option value="${esc(l)}" ${l === lid ? 'selected' : ''}>${esc(info?.lineup_names?.[l] || l)}${lus.includes(l) ? '' : ' (missing)'}</option>`).join('')}</select>
+        <input class="inp grow" data-sl="notes" data-i="${i}" value="${esc(e.notes || '')}" placeholder="notes for the running order" aria-label="Notes">
+        <span class="sl-tempo">${info?.tempo ? info.tempo + ' bpm' : ''}</span>
+        <button class="btn icon small" data-act="sl-up" data-i="${i}" title="Move up (⌥↑)" ${i ? '' : 'disabled'}>↑</button>
+        <button class="btn icon small" data-act="sl-down" data-i="${i}" title="Move down (⌥↓)" ${i < sl.songs.length - 1 ? '' : 'disabled'}>↓</button>
+        <button class="btn icon small danger" data-act="sl-del" data-i="${i}" title="Remove from setlist">×</button></div>`;
+    }).join('');
+    const avail = S.songs;
+    const r = S.slResult && S.slJob?.key === S.slSlug ? S.slResult : null;
+    m.innerHTML = `
+      <div class="sl-head">
+        <label class="field">Setlist name<input class="inp" style="width:260px;font-weight:600" data-sl="name" value="${esc(sl.name)}"></label>
+        <span class="hint mono">setlists/${esc(S.slSlug)}.json</span>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn" id="sl-save" data-act="sl-save" ${slDirty() ? '' : 'disabled'}>Save</button>
+        <button class="btn primary" data-act="sl-build" ${running || !sl.songs.length ? 'disabled' : ''} title="Build every song's Live set in show order + running order + phone fallback">${running ? 'Building…' : 'Build show'}</button>
+        <button class="btn danger" data-act="sl-delete" title="Delete setlist">Delete</button>
+      </div>
+      <div class="sl-rows" id="sl-rows">${rows || '<div class="panel-note">No songs yet: add one below.</div>'}</div>
+      <div class="frow"><select class="inp" id="sl-add" aria-label="Add song"><option value="">+ Add song…</option>${avail.map((s) => `<option value="${esc(s.slug)}">${esc(s.title)}</option>`).join('')}</select>
+        <span class="hint">${sl.songs.length} song${sl.songs.length === 1 ? '' : 's'} · lineup per song comes from that song's lineups</span></div>
+      ${S.slJob && S.slJob.key === S.slSlug ? jobHtml(S.slJob, 'Build show') : ''}
+      ${r ? showResultHtml(r) : ''}`;
+    const log = $('#sl-main .joblog'); if (log) log.scrollTop = log.scrollHeight;
+  },
+};
+
+function showResultHtml(r) {
+  const fb = r.fallback || [];
+  return `<section class="fcard result">
+    <h3><span class="ok-mark">✓</span> Show built <span class="spacer" style="flex:1"></span>
+      <a class="btn" href="${esc(r.running_order_html)}" target="_blank" rel="noopener">Running order ↗</a>
+      <button class="btn primary" data-act="reveal" data-path="${esc(r.dir)}">Reveal in Finder</button></h3>
+    <div class="lbl">Output folder</div><div class="path">${esc(r.dir)}</div>
+    <div class="h">Live sets in show order · ${r.projects.length}</div>
+    ${r.projects.map((p) => `<div class="lrow"><span class="n mono">${esc(p.split('/').pop())}</span><button class="btn small" data-act="reveal" data-path="${esc(p)}">Reveal</button></div>`).join('')}
+    <div class="h">Phone fallback</div>
+    ${fb.map((f) => `<div class="fbrow ${f.missing.length ? 'has-missing' : ''}"><b>${esc(f.song)}</b>
+      <span class="d">${f.included.length} part${f.included.length === 1 ? '' : 's'} included${f.silent ? ' · <span class="bad">silent!</span>' : ''}</span>
+      ${f.missing.length ? `<div class="bad">Missing from the fallback: ${f.missing.map((x) => `${esc(x.name)} (${esc(x.reason)})`).join('; ')}</div>` : ''}</div>`).join('') || '<div class="panel-note">Fallback not built.</div>'}
+    ${r.fallback_report ? `<details><summary class="lbl" style="cursor:pointer">fallback-report.md</summary><pre class="md">${esc(r.fallback_report)}</pre></details>` : ''}
+  </section>`;
+}
 
 // ---------- Band editor
 function ioText(v) { return Array.isArray(v) ? v.join(',') : v ?? ''; }
@@ -815,6 +1282,37 @@ function onAct(act, el, ev) {
     case 'del-rig': bandEdit(() => S.band.performers[+el.dataset.pi].rigs.splice(+el.dataset.ri, 1)); break;
     case 'add-io': bandEdit(() => { const o = S.band.interface[el.dataset.io]; let k = 'new', n = 2; while (k in o) k = `new-${n++}`; o[k] = el.dataset.io === 'outputs' ? [] : null; }); break;
     case 'del-io': bandEdit(() => { delete S.band.interface[el.dataset.io][el.dataset.key]; }); break;
+    // song options + section inspector
+    case 'opt': mutate(() => { const o = (S.song.options ||= {}); o[el.dataset.opt] = !o[el.dataset.opt]; }); break;
+    case 'sec-vamp': if (secById(S.selSec)) mutate(() => { const s = secById(S.selSec); s.vamp = !s.vamp; }); break;
+    // preview
+    case 'pv-toggle': pvToggle(); break;
+    case 'pv-from': if (S.selSec) pvFromSection(S.selSec); break;
+    case 'pv-loop': pvLoop(S.pv.loop && !S.selSec ? S.pv.loop : S.selSec); break;
+    case 'pv-zero': PV.seek(0); if (PV.playing) pvPlay(0); else { drawPlayhead(); updateClock(); } break;
+    case 'pv-mode': S.pv.mode = el.dataset.mode; pref.set('pv.mode', S.pv.mode); if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
+    case 'pv-click': S.pv.click = !S.pv.click; pref.set('pv.click', S.pv.click); PV.setClick(S.pv.click); renderTransport(); break;
+    case 'pv-clear': S.pv.solo.clear(); S.pv.mute.clear(); if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
+    case 'solo': pvSoloMute('solo', pid); break;
+    case 'mute': pvSoloMute('mute', pid); break;
+    // import
+    case 'new-song': openImport('new'); break;
+    case 'reimport': openImport('re'); break;
+    case 'pick': pickPath(el.dataset.kind); break;
+    case 'imp-go': startImport(); break;
+    case 'imp-back': setView('arrange'); break;
+    case 'imp-open': loadSong(el.dataset.slug).then(() => setView('arrange')); break;
+    // setlists
+    case 'sl-new': newSetlist(); break;
+    case 'sl-open': if (el.dataset.slug !== S.slSlug) openSetlist(el.dataset.slug); break;
+    case 'sl-save': saveSetlist(); break;
+    case 'sl-delete': deleteSetlist(); break;
+    case 'sl-build': buildShow(); break;
+    case 'sl-up': slMove(+el.dataset.i, -1); break;
+    case 'sl-down': slMove(+el.dataset.i, 1); break;
+    case 'sl-del': slEdit(() => S.sl.songs.splice(+el.dataset.i, 1)); break;
+    case 'reveal': reveal(el.dataset.path); break;
+    case 'help-tab': showHelp(el.dataset.tab); break;
     default: break;
   }
   void ev;
@@ -927,6 +1425,10 @@ function sectionMenu(sid, x, y, atBeat) {
     { label: 'Merge with next', key: 'M', disabled: i === S.song.sections.length - 1, action: () => mergeSections(sid, 1) },
     { label: 'Merge with previous', disabled: i === 0, action: () => mergeSections(sid, -1) },
     { label: s.vamp ? 'Vamp: on' : 'Vamp: off', key: 'V', cur: !!s.vamp, action: () => mutate(() => { s.vamp = !s.vamp; }) },
+    '-',
+    { label: 'Preview from here', key: 'P', action: () => pvFromSection(sid) },
+    { label: S.pv.loop === sid ? 'Stop looping' : 'Loop in preview', key: 'L', cur: S.pv.loop === sid, action: () => pvLoop(sid) },
+    '-',
     { label: 'Highlight in checks', action: () => highlight(null, sid) },
   ]);
 }
@@ -955,6 +1457,12 @@ function wire() {
 
   main.addEventListener('click', (ev) => {
     if (ev.target.closest('[data-act]')) return;
+    const ru = ev.target.closest('#ruler');
+    if (ru) {
+      const at = (beatAt(ru, ev.clientX) * spb());
+      if (PV.playing) pvPlay(at); else { PV.seek(at); drawPlayhead(); updateClock(); }
+      return;
+    }
     const sec = ev.target.closest('.sec');
     if (sec && !ev.target.closest('input')) {
       if (ev.altKey) splitSection(sec.dataset.sid, beatAt($('#sec-lane'), ev.clientX));
@@ -989,15 +1497,55 @@ function wire() {
     } else g.classList.remove('on');
   });
   main.addEventListener('input', (ev) => {
-    if (ev.target.id === 'zoom') { S.zoom = +ev.target.value; VIEWS.arrange.fill(); return; }
-    if (ev.target.dataset.bp) onBandInput(ev.target);
+    const t = ev.target;
+    if (t.id === 'zoom') { S.zoom = +t.value; VIEWS.arrange.fill(); return; }
+    if (t.id === 'pv-vol') { S.pv.vol = +t.value; pref.set('pv.vol', S.pv.vol); PV.setVolume(S.pv.vol); return; }
+    if (t.dataset.imp) {
+      const I = S.imp; I[t.dataset.imp] = t.value;
+      if (t.dataset.imp === 'slug') { I.slugTouched = !!t.value; I.slug = t.value.trim(); }
+      if (t.dataset.imp === 'logicx' && !I.slugTouched) { I.slug = slugify(baseName(t.value)); const si = $('[data-imp=slug]'); if (si) si.value = t.value ? I.slug : ''; if (!t.value) I.slug = ''; }
+      return;
+    }
+    if (t.dataset.sl && t.tagName === 'INPUT') {
+      if (t.dataset.sl === 'name') S.sl.name = t.value; else S.sl.songs[+t.dataset.i][t.dataset.sl] = t.value;
+      const b = $('#sl-save'); if (b) b.disabled = !slDirty();
+      return;
+    }
+    if (t.dataset.bp) onBandInput(t);
   });
   main.addEventListener('change', (ev) => {
-    if (ev.target.dataset.iokey || ev.target.dataset.ioval) onIoChange(ev.target);
-    else if (ev.target.dataset.bp && ev.target.tagName === 'SELECT') onBandInput(ev.target);
+    const t = ev.target;
+    if (t.dataset.iokey || t.dataset.ioval) onIoChange(t);
+    else if (t.dataset.bp && t.tagName === 'SELECT') onBandInput(t);
+    else if (t.dataset.check) { S.imp.checks[t.dataset.check] = t.checked; pref.set('exportChecks', S.imp.checks); renderMain(); }
+    else if (t.dataset.sec) {
+      const s = secById(S.selSec), k = t.dataset.sec, v = t.value.trim();
+      if (!s) return;
+      if (k === 'name' && !v) { t.value = s.name; return; }
+      mutate(() => { if (k === 'cue' && !v) delete s.cue; else s[k] = v; });
+    } else if (t.dataset.sl && t.tagName === 'SELECT') {
+      const e = S.sl.songs[+t.dataset.i];
+      slEdit(() => {
+        e[t.dataset.sl] = t.value;
+        if (t.dataset.sl === 'song') { const lus = songInfo(t.value)?.lineups || []; if (!lus.includes(e.lineup)) e.lineup = lus[0] || 'default'; }
+      });
+    } else if (t.id === 'sl-add' && t.value) {
+      const lus = songInfo(t.value)?.lineups || [];
+      slEdit(() => S.sl.songs.push({ song: t.value, lineup: lus.includes('default') ? 'default' : lus[0] || 'default', notes: '' }));
+    } else if (t.dataset.sl === 'name' || t.dataset.sl === 'notes') renderMain();
   });
   main.addEventListener('keydown', (ev) => {
-    if (ev.target.id !== 'rename') return;
+    const t = ev.target;
+    if (t.dataset?.sec) {
+      if (ev.key === 'Enter') { ev.preventDefault(); t.blur(); }
+      if (ev.key === 'Escape') { ev.preventDefault(); const s = secById(S.selSec); t.value = s ? (t.dataset.sec === 'cue' ? s.cue || '' : s.name) : ''; t.blur(); }
+      ev.stopPropagation(); return;
+    }
+    if (t.classList?.contains('sl-row') && ev.altKey && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown')) {
+      ev.preventDefault(); slMove(+t.dataset.i, ev.key === 'ArrowUp' ? -1 : 1); return;
+    }
+    if (t.dataset?.imp) { if (ev.key === 'Enter' && S.imp?.state !== 'running') { ev.preventDefault(); startImport(); } return; }
+    if (t.id !== 'rename') return;
     if (ev.key === 'Enter') { ev.preventDefault(); commitRename(true); }
     if (ev.key === 'Escape') { ev.preventDefault(); commitRename(false); }
     ev.stopPropagation();
@@ -1006,8 +1554,11 @@ function wire() {
 
   // drag & drop
   main.addEventListener('dragstart', (ev) => {
-    const t = ev.target.closest('[data-drag-t]'), card = ev.target.closest('[data-dragpart]');
-    if (t) { ev.dataTransfer.setData('application/x-lls-treatment', t.dataset.dragT); ev.dataTransfer.setData('text/plain', t.dataset.dragT); ev.dataTransfer.effectAllowed = 'copy'; }
+    const t = ev.target.closest('[data-drag-t]'), card = ev.target.closest('[data-dragpart]'), row = ev.target.closest?.('[data-slrow]');
+    if (row) {
+      if (ev.target.closest('input, select')) { ev.preventDefault(); return; }
+      ev.dataTransfer.setData('application/x-lls-slrow', row.dataset.slrow); ev.dataTransfer.effectAllowed = 'move'; row.classList.add('dragging');
+    } else if (t) { ev.dataTransfer.setData('application/x-lls-treatment', t.dataset.dragT); ev.dataTransfer.setData('text/plain', t.dataset.dragT); ev.dataTransfer.effectAllowed = 'copy'; }
     else if (card) { ev.dataTransfer.setData('application/x-lls-part', card.dataset.dragpart); ev.dataTransfer.setData('text/plain', card.dataset.dragpart); ev.dataTransfer.effectAllowed = 'move'; card.classList.add('dragging'); }
   });
   main.addEventListener('dragend', () => { $$('.dragging, .dropover').forEach((e) => e.classList.remove('dragging', 'dropover')); });
@@ -1015,12 +1566,13 @@ function wire() {
     const ty = dropTypes(ev);
     if (ty.includes('application/x-lls-treatment')) return ev.target.closest('.cell, .ph[data-droppart]');
     if (ty.includes('application/x-lls-part')) return ev.target.closest('.zone[data-drop]');
+    if (ty.includes('application/x-lls-slrow')) return ev.target.closest('.sl-row');
     return null;
   };
   main.addEventListener('dragover', (ev) => {
     const el = target(ev); if (!el) return;
     ev.preventDefault();
-    ev.dataTransfer.dropEffect = dropTypes(ev).includes('application/x-lls-part') ? 'move' : 'copy';
+    ev.dataTransfer.dropEffect = dropTypes(ev).some((x) => x === 'application/x-lls-part' || x === 'application/x-lls-slrow') ? 'move' : 'copy';
     if (!el.classList.contains('dropover')) { $$('.dropover').forEach((e) => e.classList.remove('dropover')); el.classList.add('dropover'); }
   });
   main.addEventListener('dragleave', (ev) => { const el = target(ev); if (el && !el.contains(ev.relatedTarget)) el.classList.remove('dropover'); });
@@ -1029,7 +1581,11 @@ function wire() {
     ev.preventDefault();
     el.classList.remove('dropover');
     const t = ev.dataTransfer.getData('application/x-lls-treatment'), pid = ev.dataTransfer.getData('application/x-lls-part');
-    if (t && el.classList.contains('cell')) mutate(() => setOverride(el.dataset.part, el.dataset.sid, t));
+    const from = ev.dataTransfer.getData('application/x-lls-slrow');
+    if (from !== '' && el.classList.contains('sl-row')) {
+      const a = +from, b = +el.dataset.i;
+      if (a !== b) slEdit(() => { const [x] = S.sl.songs.splice(a, 1); S.sl.songs.splice(b, 0, x); });
+    } else if (t && el.classList.contains('cell')) mutate(() => setOverride(el.dataset.part, el.dataset.sid, t));
     else if (t) mutate(() => setLineupT(el.dataset.part, t));
     else if (pid) dropPart(pid, el);
   });
@@ -1045,8 +1601,11 @@ function wire() {
   // top bar
   for (const b of $$('.tabs button')) b.addEventListener('click', () => setView(b.dataset.view));
   $('#song-select').addEventListener('change', async (ev) => {
+    const v = ev.target.value;
+    if (v === '__new' || v === '__reimport') { ev.target.value = S.slug || ''; openImport(v === '__new' ? 'new' : 're'); return; }
     if (dirty() && !(await confirmDialog('Unsaved changes', `Discard unsaved changes to “${S.song.title}”?`, 'Discard'))) { ev.target.value = S.slug; return; }
-    loadSong(ev.target.value);
+    await loadSong(v);
+    if (!SONG_VIEWS.has(S.view) && S.view !== 'setlists') setView('arrange');
   });
   $('#lineup-select').addEventListener('change', (ev) => selectLineup(ev.target.value));
   $('#lineup-menu').addEventListener('click', (ev) => lineupMenu(ev.currentTarget));
@@ -1060,7 +1619,7 @@ function wire() {
   document.addEventListener('keydown', onKey);
   document.addEventListener('keyup', (ev) => { if (ev.key === 'Alt') document.body.classList.remove('alt'); });
   addEventListener('blur', () => document.body.classList.remove('alt'));
-  addEventListener('beforeunload', (ev) => { if (dirty() || bandDirty()) { ev.preventDefault(); ev.returnValue = ''; } });
+  addEventListener('beforeunload', (ev) => { if (dirty() || bandDirty() || slDirty()) { ev.preventDefault(); ev.returnValue = ''; } });
   let raf = 0;
   new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (S.song && S.view === 'arrange' && $('#tl')) VIEWS.arrange.fill(); }); }).observe(main);
 }
@@ -1071,21 +1630,51 @@ function dropPart(pid, zone) {
 }
 
 function setView(v) {
-  S.view = v; pref.set('view', v); S.renaming = null; closeMenu();
+  if (v === 'import' && !S.imp) { openImport(S.song ? 're' : 'new'); return; }
+  S.view = v; if (v !== 'import') pref.set('view', v); S.renaming = null; closeMenu();
   history.replaceState(null, '', '#' + v);
   render();
+  if (v === 'setlists') loadSetlists();
 }
 
 function applyTheme(t) { document.documentElement.dataset.theme = t; pref.set('theme', t); }
 
-function showHelp() {
+const HOW_STEPS = [
+  ['Export from Logic', 'On a copy of the project: export all tracks as 24-bit WAVs (effects on, automation on, to project end), bounce the full mix, export aux returns as tracks. One folder.'],
+  ['Import', 'Song picker → <b>+ New song</b>. Pick the .logicx and the export folder. The tool clones the project, reads the clone, links the stems, and lists what happened to every Logic track.'],
+  ['Arrange & name sections', '<b>Arrange</b> tab: drag section edges, ⌥-click to split, double-click to rename. Mark vamps (∞) and set spoken cue text. Preview with Space.'],
+  ['Treatments', 'Each part plays as backing audio, an audio loop, a MIDI clip through its instrument, or live by a performer. Drag a treatment chip onto a part (whole song) or onto a cell (one section).'],
+  ['Lineups', '<b>Lineup</b> tab: drag parts onto performers’ rigs (keys, drums, vocal…), or <b>Suggest for N performers</b>. Fix what the Checks panel flags. One song can have many lineups.'],
+  ['Build & play', '<b>Build</b> → <b>Open in Live</b> for one song, or <b>Setlists</b> → <b>Build show</b> for the whole set: one Live set per song, a printable running order, and phone fallback mixes.'],
+];
+
+function showHelp(tab = 'how') {
   const m = isMac ? '⌘' : 'Ctrl';
-  const rows = [[`${m} S`, 'Save song + band'], [`${m} Z / ⇧${m} Z`, 'Undo / redo'], [`${m} B`, 'Build the Live set'], ['1 2 3', 'Arrange / Lineup / Band'],
+  const rows = [[`${m} S`, 'Save song + band'], [`${m} Z / ⇧${m} Z`, 'Undo / redo'], [`${m} B`, 'Build the Live set'], ['1 2 3 4', 'Arrange / Lineup / Band / Setlists'],
+    ['Space', 'Preview: play / stop'], ['P', 'Preview from the selected section'], ['L', 'Loop the selected section'], ['Home', 'Playhead to bar 1'],
     ['← →', 'Select section'], ['Enter', 'Rename section'], ['S', 'Split section (or ⌥-click at a bar)'], ['M', 'Merge with next'], ['V', 'Toggle vamp'],
     ['Drag chip → cell', 'Override one section'], ['⌥-click cell', 'Clear override'], ['Right-click', 'Context menus everywhere'],
-    ['Card + 1–9 / 0', 'Assign focused card to a rig zone / Playback'], ['Esc', 'Clear selection / close'], ['?', 'This help']];
-  openDialog(`<div class="dlg-h"><b>Shortcuts</b></div><div class="dlg-b"><div class="keys">${rows.map(([k, d]) => `<kbd>${esc(k)}</kbd><span>${esc(d)}</span>`).join('')}</div></div>
-    <div class="dlg-f"><button class="btn" data-act="close-dlg">Close</button></div>`, 'small');
+    ['Card + 1–9 / 0', 'Assign focused card to a rig zone / Playback'], ['⌥↑ / ⌥↓', 'Move the focused setlist row'], ['Esc', 'Clear selection / close'], ['?', 'This help']];
+  const how = `
+    <ol class="how">${HOW_STEPS.map(([t, d], i) => `<li><span class="stepn">${i + 1}</span><div><b>${esc(t)}</b><p>${d}</p></div></li>`).join('')}</ol>
+    <div class="split2">
+      <div class="fcard"><h3>This UI (before the gig)</h3><ul>
+        <li>Imports Logic projects and stems; never touches the original project.</li>
+        <li>Edits the song model: sections, treatments, lineups, band rigs.</li>
+        <li>Previews the backing in the browser so the band can rehearse against it.</li>
+        <li>Generates the Live sets, running order and phone fallback files.</li></ul></div>
+      <div class="fcard"><h3>Ableton Live (on stage)</h3><ul>
+        <li>Runs the generated set on its own; this tool isn't needed at the gig.</li>
+        <li>One scene per section: launch scenes to move through the song (or auto-advance).</li>
+        <li>Plays backing stems + MIDI clips, routes performers’ keyboards/kit/mics.</li>
+        <li>Click and spoken cues go to the in-ear outputs.</li></ul></div>
+    </div>`;
+  const keys = `<div class="keys">${rows.map(([k, d]) => `<kbd>${esc(k)}</kbd><span>${esc(d)}</span>`).join('')}</div>`;
+  openDialog(`<div class="dlg-h"><b>How it works</b><div class="tabs" role="tablist" style="margin-left:auto">
+      <button role="tab" data-act="help-tab" data-tab="how" aria-selected="${tab === 'how'}">Workflow</button>
+      <button role="tab" data-act="help-tab" data-tab="keys" aria-selected="${tab === 'keys'}">Shortcuts</button></div></div>
+    <div class="dlg-b">${tab === 'how' ? how : keys}</div>
+    <div class="dlg-f"><button class="btn" data-act="close-dlg">Close</button></div>`, tab === 'how' ? '' : 'small');
 }
 
 function onKey(ev) {
@@ -1108,6 +1697,8 @@ function onKey(ev) {
   const typing = ev.target.closest?.('input, textarea, select, [contenteditable]');
   if (mod && ev.key.toLowerCase() === 'z' && !typing) { ev.preventDefault(); ev.shiftKey ? redo() : undo(); return; }
   if (typing || mod || ev.ctrlKey || ev.metaKey) return;
+  if (['1', '2', '3', '4'].includes(ev.key) && !ev.target.closest?.('.card')) { setView(['arrange', 'lineup', 'band', 'setlists'][+ev.key - 1]); return; }
+  if (ev.key === '?') { showHelp(); return; }
   if (!S.song) return;
   const card = ev.target.closest?.('.card');
   if (card && /^[0-9]$/.test(ev.key)) {
@@ -1118,10 +1709,10 @@ function onKey(ev) {
     return;
   }
   if (card && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); $('.chip', card).click(); return; }
-  if (['1', '2', '3'].includes(ev.key)) { setView(['arrange', 'lineup', 'band'][+ev.key - 1]); return; }
-  if (ev.key === '?') { showHelp(); return; }
   if (ev.key === 'Escape') { S.selSec = null; S.highlight = null; renderMain(); return; }
   if (S.view !== 'arrange') return;
+  if (ev.key === ' ' && !ev.target.closest?.('button, a')) { ev.preventDefault(); pvToggle(); return; }
+  if (ev.key === 'Home') { ev.preventDefault(); onAct('pv-zero', document.body); return; }
   const secs = S.song.sections, i = secs.findIndex((s) => s.id === S.selSec);
   if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
     ev.preventDefault();
@@ -1136,7 +1727,10 @@ function onKey(ev) {
   else if (k === 's') splitSection(S.selSec);
   else if (k === 'm') mergeSections(S.selSec, 1);
   else if (k === 'v') mutate(() => { const s = secById(S.selSec); s.vamp = !s.vamp; });
+  else if (k === 'p') pvFromSection(S.selSec);
+  else if (k === 'l') pvLoop(S.selSec);
 }
 
+window.lls = { S, PV };  // console debugging handle
 wire();
 init();
