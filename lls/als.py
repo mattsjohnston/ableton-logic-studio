@@ -62,9 +62,9 @@ def strip_track(t):
     for aa in t.iter("ArrangerAutomation"):
         ev = aa.find("Events")
         if ev is not None: clear(ev)
-    for v in t.iter("Value"):
-        for c in list(v):
-            if c.tag in ("AudioClip", "MidiClip"): v.remove(c)
+    for parent in list(t.iter()):  # every clip anywhere: session slots, arrangement, take lanes
+        for c in list(parent):
+            if c.tag in ("AudioClip", "MidiClip"): parent.remove(c)
     t.find("TrackGroupId").set("Value", "-1")
     return t
 
