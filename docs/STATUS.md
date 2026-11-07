@@ -13,6 +13,7 @@
 ## Phase 2: UI + lineups
 - ✅ Lineup engine: resolve / validate / suggest for 2–5 performers; live treatments (vocal/bass inputs, keyboard port+channel routing, drums). Named-port routing verified in Live (Impulse (MIDI) Ch.1).
 - ✅ Local web UI (`python -m lls ui`): sections, treatments, lineup board, grouped checks, build + open in Live. Headless-browser click-through passed.
+- ✅ Whole workflow in the UI (headless Chrome click-through with the real sample): Import (APFS clone → ingest → link-stems job with live log; result shows parts, link report, accounted-for), Setlists tab (CRUD, drag/⌥↑↓ reorder, Build show job, running order, fallback report, Reveal in Finder), song options (cues / auto-advance), section cue text + vamp, browser preview (Web Audio: lineup backing / full song, click, solo/mute, loop, playhead), "How it works" help. Native file pickers (osascript) are covered by tests with a stubbed osascript only.
 - 🧪 Sound switching on one keyboard (Auto monitoring + placeholder clips). It relies on Live's documented Auto behaviour; untested with a real keyboard.
 
 ## Phase 3: instruments

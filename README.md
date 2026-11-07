@@ -15,7 +15,10 @@ Turns Logic Pro songs into Ableton Live Session sets for a 1–6 person synthwav
    - an accounted-for list covering every Logic track.
    - Re-running keeps your edits.
 3. `python -m lls link-stems songs/<slug> <export folder>` attaches the exported stems. Duplicate export names are resolved by audio activity.
-4. `python -m lls ui` (Orca quick command **Dev**) opens http://127.0.0.1:8765. There you:
+4. `python -m lls ui` (Orca quick command **Dev**) opens http://127.0.0.1:8765. The whole workflow runs from the browser (the **?** button explains it). There you:
+   - import a song (song picker → **+ New song**, or **↻ Re-import / Link stems**): the UI clones the `.logicx` into `samples/<slug>.logicx` (APFS copy), ingests the copy and links the export folder, then shows the parts, the link report and the accounted-for list. Steps 2–3 above are what it runs;
+   - preview the backing in the browser (Space): *Lineup backing* plays exactly what the laptop will play in the current lineup, *Full song* plays the mix bounce; click, solo/mute, play from / loop a section. Rehearsal aid only: the show runs in Live;
+   - toggle spoken **Cues** and **Auto-advance**, set per-section cue text and vamp;
    - name and adjust sections;
    - set treatments per part and section;
    - build lineups by dragging parts onto performers (or *Suggest for N performers*);
@@ -25,7 +28,7 @@ Turns Logic Pro songs into Ableton Live Session sets for a 1–6 person synthwav
    - `python -m lls lineup suggest songs/<slug> matt keys-2 drummer bassist --save four`
    - `python -m lls lineup validate songs/<slug> four`
    - `python -m lls build songs/<slug> four`
-6. Show: `python -m lls setlist build setlists/<name>.json` gives one Live set per song in show order, a printable running order, and phone fallback mixes (with a click-left variant). See `docs/stage-setup.md`.
+6. Show: the **Setlists** tab (create/reorder songs, lineup + notes per song, **Build show**, **Reveal in Finder**), or `python -m lls setlist build setlists/<name>.json`, gives one Live set per song in show order, a printable running order, and phone fallback mixes (with a click-left variant). See `docs/stage-setup.md`.
 
 ## What a built set contains
 - One scene per section, plus a **STOP** scene; scene tempo; launch quantize 1 bar.
