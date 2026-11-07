@@ -6,7 +6,7 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 | Topic | Result |
 |---|---|
 | Getting data out of Logic | Logic's own exports (all tracks as audio, all MIDI tracks as one MIDI file, AAF, FCP XML) ✅ exist in 13.0. AppleScript: generic commands only ✅. An in-Logic AU can't see the project ⚠️ (Scripter docs). DAWproject: unsupported by Logic ✅ (no trace in the app bundle) and by Live ⚠️. |
-| .logicx parsing | logic2ableton (MIT) reads tracks, regions, notes, tempo and mixer from a Logic **11** project ✅. It drops some comp files ✅ (warns, but they're missing from the output). Logic 13 projects are untested ⚠️. |
+| .logicx parsing | logic2ableton (MIT) reads tracks, regions, notes, tempo and mixer from a Logic **11** project ✅. Its "19 missing" warning is a false alarm: those are unused takes ✅ (code + data traced). Apple Loops stored outside the package are a real gap (2 files). Logic 13 projects are untested ⚠️. |
 | Plugin state | Every AU state sits in ProjectData as a plain `.aupreset` plist ✅. Analog Lab preset names are readable ✅. |
 | **Analog Lab → Live** | **Logic's AU state injected into Live's AU block loads the exact preset ✅** (confirmed by a re-save read back from Live). The VST3 route fails ✅, so we use AU. |
 | .als generation | A template-based generator builds Session sets that open in Live 12.4.25b1 ✅. The ID rules come from Live-saved sets ✅. Live needs an `Ableton Project Info` folder ✅. Live ships its own XML schema ✅. |
@@ -36,10 +36,10 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 - **ProjectData parsing is reverse-engineered.** A Logic update can break it. The fallback is stems + MIDI + a hand-filled manifest, so we lose convenience, never the song.
 - **Beta on stage.** Pin the version and turn off auto-update before gigs.
 - **Plugin RAM** across 20–30 songs: see Setlist structure above.
-- **Logic built-ins:** in this song, about 8 drum tracks are Drummer/Drum Machine Designer, plus probably 2 Alchemy parts. They become stems, or get sampled into Drum Racks. That's more than the 10% you estimated.
+- **Logic built-ins** (✅ mapped via `spikes/map_plugins.py`): 8 drum/FX tracks use **Quick Sampler**, Alchemy is on 3 tracks, Sculpture on 1, and Klopfgeist on a click strip. Only 4 of 16 MIDI tracks are Analog Lab. Quick Sampler drums are easy to move to a Drum Rack, because the samples are in `QuicksamplerFiles`. Alchemy and Sculpture state is Logic-only, so those parts become stems or get resampled.
 - **Plugins missing at export:** Melodyne isn't installed here, so vocals must be bounced where it lives.
 - **The .als format moves with Live versions.** Re-validate the generator on each Live update; Live's schema files make that diff easy.
-- **Plugin-to-track mapping:** *Agent A result goes here.*
+- **Plugin-to-track mapping:** solved ✅. Each plugin slot is an `AuCU` record linked to its channel strip. All 4 Analog Lab presets and both Melodyne inserts map to named tracks with certainty.
 
 ## Phase 1 plan: core model + builder MVP for *Thoughts For The Night*
 1. Promote the spikes into a package: `lls/ingest` (parser wrapper + aupreset extractor + manifest), `lls/model` (JSON schema), `lls/build` (generator).

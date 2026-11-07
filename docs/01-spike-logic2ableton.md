@@ -20,3 +20,7 @@ Run: `logic2ableton samples/... -o out/l2a`. Took about 10 s, with no errors. Th
 ## Verdict
 The parser is a strong reader of structure (tracks, regions, notes, tempo, mixer). Its gaps are exactly the things we'd take from Logic's own exports anyway (printed audio, FX stems). Plan: **use its parser as a library for structure plus notes, and use our own Session View builder.** Always cross-check against Logic's bounced stems, because a silent drop (the 19 files) is exactly what the "nothing silently dropped" rule exists to catch.
 Still open: opening the output in Live (user), Logic 13-saved projects, and markers.
+
+## Corrections (later, from `spikes/map_plugins.py` / `diag_missing_audio.py`)
+- The "19 MISSING" files are **unused take-folder takes**, not lost audio. The real gap is the 2 Apple Loops outside the package.
+- The drums are **Quick Sampler** (8 tracks), not Drum Machine Designer. Alchemy ×3, Sculpture ×1, Analog Lab ×4 (New Vision → New Vision sw26, Lead Line Synth → Blade Of Canada, Bass Line → Da Fonk, Verse backing Synth → Desynk).
