@@ -1,13 +1,19 @@
 """UI server API tests. Runs the real server on a random port against a temp copy of songs/ + band.json.
 A stub lls.lineup is injected through sys.modules (the real one is written separately).
 Run: python -m unittest tests.test_ui_server"""
-import json, os, shutil, sys, tempfile, threading, types, unittest, urllib.error, urllib.request
+import io, json, os, shutil, sys, tempfile, threading, time, types, unittest, urllib.error, urllib.request, wave
+from unittest import mock
+
+import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from lls.ui import server  # noqa: E402
+import lls.ingest, lls.setlist, lls.stems  # noqa: E402,F401  (so mock.patch can target them)
+from tests.synth import make_song  # noqa: E402
 
 SLUG = "thoughts-for-the-night"
+SAMPLE = "/Users/mattjohnston/Dev/Ableton Logic Studio/samples/Thoughts For The Night.logicx"
 
 
 def stub_lineup():
@@ -77,7 +83,7 @@ class UiServer(unittest.TestCase):
     def test_serves_index_and_assets(self):
         st, body = self.req("GET", "/", raw=True)
         self.assertEqual(st, 200); self.assertIn(b"<title>Live Band Sets</title>", body)
-        for p in ("/static/app.js", "/static/app.css"):
+        for p in ("/static/app.js", "/static/app.css", "/static/preview.js"):
             self.assertEqual(self.req("GET", p, raw=True)[0], 200)
         self.assertEqual(self.req("GET", "/static/../server.py", raw=True)[0], 404)
 
@@ -169,6 +175,182 @@ class UiServer(unittest.TestCase):
         r = urllib.request.Request(self.base + "/api/songs", headers={"Host": "evil.example"})
         with self.assertRaises(urllib.error.HTTPError) as cm: urllib.request.urlopen(r, timeout=5)
         self.assertEqual(cm.exception.code, 403)
+
+    # --- helpers for the workflow endpoints
+    def get_raw(self, path, headers=None):
+        r = urllib.request.Request(self.base + path, headers=headers or {})
+        try:
+            with urllib.request.urlopen(r, timeout=20) as resp: return resp.status, dict(resp.headers), resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
+
+    def wait_job(self, jid, timeout=600):
+        t0, lines, since = time.time(), [], 0
+        while time.time() - t0 < timeout:
+            st, j = self.req("GET", f"/api/jobs/{jid}?since={since}")
+            self.assertEqual(st, 200)
+            lines += j["lines"]; since = j["next"]
+            if j["state"] != "running": j["all_lines"] = lines; return j
+            time.sleep(0.05)
+        self.fail(f"job {jid} timed out")
+
+    def handler_attr(self, **kw):
+        h = self.srv.RequestHandlerClass
+        old = {k: getattr(h, k) for k in kw}
+        for k, v in kw.items(): setattr(h, k, v)
+        self.addCleanup(lambda: [setattr(h, k, v) for k, v in old.items()])
+
+    # --- stems (preview playback)
+    def test_stem_range_requests(self):
+        make_song(self.tmp, "range-song", "Range Song")
+        st, h, full = self.get_raw("/api/songs/range-song/stem/pad")
+        self.assertEqual(st, 200); self.assertEqual(h["Accept-Ranges"], "bytes"); self.assertEqual(h["Content-Type"], "audio/wav")
+        self.assertEqual(full[:4], b"RIFF"); self.assertEqual(int(h["Content-Length"]), len(full))
+        st, h, part = self.get_raw("/api/songs/range-song/stem/pad", {"Range": "bytes=0-99"})
+        self.assertEqual(st, 206); self.assertEqual(part, full[:100]); self.assertEqual(h["Content-Range"], f"bytes 0-99/{len(full)}")
+        st, h, part = self.get_raw("/api/songs/range-song/stem/pad", {"Range": "bytes=1000-"})
+        self.assertEqual((st, part), (206, full[1000:]))
+        st, h, part = self.get_raw("/api/songs/range-song/stem/pad", {"Range": "bytes=-16"})
+        self.assertEqual((st, part), (206, full[-16:]))
+        st, h, _ = self.get_raw("/api/songs/range-song/stem/pad", {"Range": f"bytes={len(full) + 10}-"})
+        self.assertEqual(st, 416); self.assertEqual(h["Content-Range"], f"bytes */{len(full)}")
+        # 24-bit source -> 16-bit preview, cached under stems/preview/
+        st, h, pcm = self.get_raw("/api/songs/range-song/stem/pad?pcm16=1")
+        self.assertEqual(st, 200)
+        with wave.open(io.BytesIO(pcm)) as w, wave.open(io.BytesIO(full)) as w0:
+            self.assertEqual((w.getsampwidth(), w.getnframes(), w.getframerate()), (2, w0.getnframes(), w0.getframerate()))
+            a = np.frombuffer(w.readframes(400), "<i2")
+            self.assertAlmostEqual(float(np.abs(a).max()) / 32768, 0.5, places=2)
+        self.assertTrue(os.listdir(os.path.join(self.tmp, "songs", "range-song", "stems", "preview")))
+        self.assertEqual(self.get_raw("/api/songs/range-song/stem/bass")[0], 404)   # MIDI-only, no stem
+        self.assertEqual(self.get_raw("/api/songs/range-song/stem/_mix")[0], 404)   # no mix bounce
+        self.assertEqual(self.get_raw("/api/songs/range-song/stem/nope")[0], 404)
+        sp = os.path.join(self.tmp, "songs", "range-song", "song.json")
+        s = server.read_json(sp); s["parts"][0]["stem"] = "../../band.json"; server.write_json_atomic(sp, s)
+        self.assertEqual(self.get_raw("/api/songs/range-song/stem/pad")[0], 403)
+
+    # --- import job
+    def test_import_job_with_fake_ingest(self):
+        src_dir = tempfile.mkdtemp(prefix="lls-orig-"); self.addCleanup(shutil.rmtree, src_dir, True)
+        orig = os.path.join(src_dir, "My New Song.logicx")
+        os.makedirs(os.path.join(orig, "Alternatives", "000")); open(os.path.join(orig, "Alternatives", "000", "ProjectData"), "wb").write(b"x" * 64)
+        exports = os.path.join(src_dir, "exports"); os.makedirs(exports)
+        before = sorted((p, os.path.getmtime(os.path.join(dp, p))) for dp, _, fs in os.walk(orig) for p in fs)
+        seen = {}
+
+        def fake_ingest(logicx, song_dir):
+            seen["logicx"] = logicx
+            print(" rendering raw stem: Pad (2 regions)")
+            _, song = make_song(os.path.dirname(os.path.dirname(song_dir)), os.path.basename(song_dir), "my-new-song")
+            song["ignored_tracks"] = [{"name": "Hat", "status": "MISSING", "reason": "Apple Loop"}]
+            server.write_json_atomic(os.path.join(song_dir, "song.json"), song)
+            return song
+
+        def fake_link(song_dir, export_dir):
+            print("linking…")
+            return [("Pad.wav", "→ part 'Pad'"), ("Reverb.wav", "→ NEW part 'reverb' (backing-audio): no Logic track matched; check it"),
+                    ("Bass", "⚠ no exported stem: Logic built-in"), ("My New Song.wav", "full mix")]
+
+        with mock.patch("lls.ingest.ingest", fake_ingest), mock.patch("lls.stems.link", fake_link):
+            st, r = self.req("POST", "/api/import", {"logicx": orig, "slug": "my-new-song", "export_dir": exports})
+            self.assertEqual(st, 202)
+            j = self.wait_job(r["job"])
+        self.assertEqual(j["state"], "done", j)
+        copy = os.path.join(self.tmp, "samples", "my-new-song.logicx")
+        self.assertEqual(seen["logicx"], copy)  # ingest only ever sees the copy
+        self.assertTrue(os.path.isfile(os.path.join(copy, "Alternatives", "000", "ProjectData")))
+        self.assertEqual(before, sorted((p, os.path.getmtime(os.path.join(dp, p))) for dp, _, fs in os.walk(orig) for p in fs))
+        self.assertIn(" rendering raw stem: Pad (2 regions)", j["all_lines"]); self.assertIn("linking…", j["all_lines"])
+        res = j["result"]
+        self.assertEqual(res["title"], "My New Song")  # parser fell back to the copy's file name: restored
+        self.assertEqual([x["status"] for x in res["link"]], ["matched", "new", "missing", "mix"])
+        self.assertEqual(res["ignored_tracks"][0]["status"], "MISSING")
+        self.assertEqual(len(res["sections"]), 2)
+        song = server.read_json(os.path.join(self.tmp, "songs", "my-new-song", "song.json"))
+        self.assertEqual(song["source"]["original"], orig); self.assertEqual(song["source"]["logicx"], copy)
+        # existing slug needs reimport; bad inputs are refused before any job starts
+        self.assertEqual(self.req("POST", "/api/import", {"logicx": orig, "slug": "my-new-song"})[0], 409)
+        self.assertEqual(self.req("POST", "/api/import", {"logicx": exports, "slug": "x-song"})[0], 400)
+        self.assertEqual(self.req("POST", "/api/import", {"logicx": orig, "slug": "Bad Slug"})[0], 400)
+        self.assertEqual(self.req("POST", "/api/import", {"slug": "my-new-song", "reimport": True})[0], 400)
+        # link-stems only (no Logic project) on an existing song
+        with mock.patch("lls.stems.link", fake_link):
+            st, r = self.req("POST", "/api/import", {"slug": "my-new-song", "export_dir": exports, "reimport": True})
+            j = self.wait_job(r["job"])
+        self.assertEqual(j["state"], "done"); self.assertIsNone(j["result"]["copy"])
+
+    def test_import_job_error_is_reported(self):
+        src_dir = tempfile.mkdtemp(prefix="lls-orig-"); self.addCleanup(shutil.rmtree, src_dir, True)
+        orig = os.path.join(src_dir, "Broken.logicx"); os.makedirs(orig)
+
+        def boom(logicx, song_dir): print("reading…"); raise ValueError("not a Logic project")
+        with mock.patch("lls.ingest.ingest", boom):
+            j = self.wait_job(self.req("POST", "/api/import", {"logicx": orig, "slug": "broken"})[1]["job"])
+        self.assertEqual(j["state"], "error"); self.assertIn("not a Logic project", j["error"]); self.assertIn("reading…", j["all_lines"])
+
+    @unittest.skipUnless(os.path.isdir(SAMPLE), "sample project not present")
+    def test_import_real_sample_into_temp_root(self):
+        st, r = self.req("POST", "/api/import", {"logicx": SAMPLE, "slug": "thoughts-copy"})
+        j = self.wait_job(r["job"])
+        self.assertEqual(j["state"], "done", j.get("error"))
+        self.assertEqual(j["result"]["title"], "Thoughts For The Night")
+        self.assertGreater(len(j["result"]["parts"]), 10)
+        self.assertTrue(os.path.isdir(os.path.join(self.tmp, "samples", "thoughts-copy.logicx")))
+
+    # --- pickers / reveal
+    def test_pick_and_reveal(self):
+        fake = lambda out, code=0: [sys.executable, "-c", f"import sys; print({out!r}); sys.exit({code})"]
+        self.handler_attr(osascript=fake("/Users/x/Song.logicx/"))
+        self.assertEqual(self.req("POST", "/api/pick", {"kind": "logicx"}), (200, {"path": "/Users/x/Song.logicx"}))
+        self.handler_attr(osascript=fake("/Users/x/Exports/"))
+        self.assertEqual(self.req("POST", "/api/pick", {"kind": "folder"}), (200, {"path": "/Users/x/Exports"}))
+        self.assertEqual(self.req("POST", "/api/pick", {"kind": "logicx"})[0], 400)  # not a .logicx
+        self.handler_attr(osascript=[sys.executable, "-c", "import sys; sys.stderr.write('User canceled. (-128)'); sys.exit(1)"])
+        self.assertEqual(self.req("POST", "/api/pick", {"kind": "folder"}), (200, {"cancelled": True}))
+        self.assertEqual(self.req("POST", "/api/pick", {"kind": "nope"})[0], 400)
+        self.handler_attr(reveal_cmd=["true"])
+        self.assertEqual(self.req("POST", "/api/reveal", {"path": "/etc"})[0], 403)
+        self.assertEqual(self.req("POST", "/api/reveal", {"path": "songs/nope"})[0], 404)
+        self.assertEqual(self.req("POST", "/api/reveal", {"path": os.path.join(self.tmp, "band.json")})[0], 200)
+
+    # --- setlists
+    def test_setlist_crud_and_build(self):
+        sl = {"name": "Friday: Club", "band": "band.json", "songs": [{"song": SLUG, "lineup": "default", "notes": "Opener"}]}
+        self.assertEqual(self.req("PUT", "/api/setlists/friday", sl), (200, {"ok": True}))
+        st, lst = self.req("GET", "/api/setlists")
+        self.assertEqual(st, 200)
+        self.assertEqual(next(x for x in lst if x["slug"] == "friday"), {"slug": "friday", "name": "Friday: Club", "songs": 1, "built": False})
+        self.assertEqual(self.req("GET", "/api/setlists/friday")[1]["songs"][0]["notes"], "Opener")
+        self.assertEqual(self.req("PUT", "/api/setlists/friday", {**sl, "songs": [{"song": "no-such-song"}]})[0], 400)
+        self.assertEqual(self.req("PUT", "/api/setlists/friday", {**sl, "name": ""})[0], 400)
+        self.assertEqual(self.req("PUT", "/api/setlists/Bad%20Slug", sl)[0], 404)
+        self.assertEqual(self.req("GET", "/api/setlists/friday/running-order")[0], 404)
+        calls = []
+
+        def stub_build(path, out_root, root):
+            calls.append((path, out_root, root)); print("building stub")
+            base = os.path.join(out_root, "Friday- Club"); os.makedirs(os.path.join(base, "fallback"), exist_ok=True)
+            open(os.path.join(base, "running-order.html"), "w").write("<html><h1>Friday: Club</h1></html>")
+            open(os.path.join(base, "fallback", "fallback-report.md"), "w").write("# Phone fallback\n")
+            return {"dir": base, "projects": [os.path.join(base, "01 Song Project")], "running_order": os.path.join(base, "running-order.md"),
+                    "fallback": [{"song": "Song", "files": [], "included": [{"part": "pad", "name": "Pad", "sections": 2}], "missing": []}]}
+
+        with mock.patch("lls.setlist.build_setlist", stub_build):
+            st, r = self.req("POST", "/api/setlists/friday/build")
+            self.assertEqual(st, 202)
+            j = self.wait_job(r["job"])
+        self.assertEqual(j["state"], "done", j)
+        self.assertEqual(calls[0], (os.path.join(self.tmp, "setlists", "friday.json"), os.path.join(self.tmp, "out", "setlists"), self.tmp))
+        self.assertEqual(j["result"]["fallback_report"], "# Phone fallback\n")
+        self.assertIn("building stub", j["all_lines"])
+        st, h, body = self.get_raw(j["result"]["running_order_html"])
+        self.assertEqual(st, 200); self.assertIn(b"Friday: Club", body); self.assertIn("text/html", h["Content-Type"])
+        self.assertTrue(next(x for x in self.req("GET", "/api/setlists")[1] if x["slug"] == "friday")["built"])
+        self.handler_attr(reveal_cmd=["true"])
+        self.assertEqual(self.req("POST", "/api/reveal", {"path": j["result"]["dir"]})[0], 200)
+        self.assertEqual(self.req("DELETE", "/api/setlists/friday"), (200, {"ok": True}))
+        self.assertEqual(self.req("GET", "/api/setlists/friday")[0], 404)
+        self.assertEqual(self.req("GET", "/api/jobs/j999999")[0], 404)
 
 
 if __name__ == "__main__":
