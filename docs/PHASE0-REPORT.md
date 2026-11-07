@@ -12,7 +12,7 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 | .als generation | A template-based generator builds Session sets that open in Live 12.4.25b1 ✅. The ID rules come from Live-saved sets ✅. Live needs an `Ableton Project Info` folder ✅. Live ships its own XML schema ✅. |
 | Extensions SDK | Creates tracks, scenes, clips and devices. It can't do routing, quantize, colours, macro maps or save ⚠️ (wrapper names plus community docs; the official SDK zip is beta-portal only). |
 | AbletonOSC/MCP | Fine for rehearsal control. They can't insert plugins or import audio clips ⚠️. |
-| Setlist structure | Pending measurement: *Agent B result goes here.* |
+| Setlist structure | Measured on the M3 Pro with 36 GB ✅ (`spikes/scale_test.py`), with N Analog Lab AU instances loaded and idle: **6 → 2.5 s load, 2.1 GB, ~1 core idle · 30 → 10 s, 5.5 GB, ~2.5 cores · 90 → 30 s, 9.9 GB, ~4.5 cores.** That works out to ~0.3 s, ~120 MB and ~4–5 % of a core per instance, even while silent. A whole show in one set (~150) would mean ~50 s to load and 6–8 cores idle ⚠️ (extrapolated). **→ One set per song**: ~3–5 s to load each. |
 | Driving Live's UI | Works through `orca computer` plus System Events menu clicks ✅. Useful for automated test opens and saves. |
 
 ## Recommended architecture
@@ -23,7 +23,7 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 2. **Song model (JSON, source of truth):** songs → sections → parts → treatment per section; instruments (Analog Lab aupreset / Logic built-in / audio); performers; lineups.
    - Sections are proposed automatically from clip boundaries. On *Thoughts* that gives clean 8-bar blocks.
    - Logic markers are used when present.
-3. **Builder (Python, stdlib only):** model + lineup → a self-contained Live project folder (stems copied in, one scene per section, a STOP scene, scene tempos, 1-bar quantize, click/cue routing). Analog Lab tracks get the Logic state injected.
+3. **Builder (Python, stdlib only):** model + lineup → **one Live set per song** (load gap of about 3–5 s, measured with ~6 instances), grouped in one setlist folder. That keeps idle CPU to roughly one core and isolates each song if something goes wrong. Each set is a self-contained Live project folder (stems copied in, one scene per section, a STOP scene, scene tempos, 1-bar quantize, click/cue routing). Analog Lab tracks get the Logic state injected.
    - It is regenerated per lineup and never edited by hand.
    - On stage nothing of ours runs.
 4. **UI: a local web app** (Python backend serving a browser drag-and-drop page, started from an Orca quick command).
@@ -35,7 +35,7 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 ## Risks
 - **ProjectData parsing is reverse-engineered.** A Logic update can break it. The fallback is stems + MIDI + a hand-filled manifest, so we lose convenience, never the song.
 - **Beta on stage.** Pin the version and turn off auto-update before gigs.
-- **Plugin RAM** across 20–30 songs: see Setlist structure above.
+- **Per-instance idle CPU** (~4–5 % of a core) is why we use one set per song. Playback CPU hasn't been measured yet; check it in Phase 1 with the real song. Live's Save dialogs didn't show up in the accessibility tree during automated runs, so test automation should avoid unsaved-set prompts.
 - **Logic built-ins** (✅ mapped via `spikes/map_plugins.py`): 8 drum/FX tracks use **Quick Sampler**, Alchemy is on 3 tracks, Sculpture on 1, and Klopfgeist on a click strip. Only 4 of 16 MIDI tracks are Analog Lab. Quick Sampler drums are easy to move to a Drum Rack, because the samples are in `QuicksamplerFiles`. Alchemy and Sculpture state is Logic-only, so those parts become stems or get resampled.
 - **Plugins missing at export:** Melodyne isn't installed here, so vocals must be bounced where it lives.
 - **The .als format moves with Live versions.** Re-validate the generator on each Live update; Live's schema files make that diff easy.
@@ -47,6 +47,9 @@ Detail lives in `docs/00`–`06`. Tags: **✅ verified** on this Mac · **⚠️
 3. Section proposal and the accounted-for report (CLI output).
 4. Build one default lineup: everything is backing audio except Analog Lab parts as MIDI clip + instrument. Then the click track (generated) routed to outputs 3-4.
 5. **Acceptance:** opens in Live; scenes line up with sections; clips launch on the bar; tempo correct; Analog Lab parts play the Logic presets; the accounted-for report shows zero unexplained tracks. I verify by opening and re-saving in Live myself.
+
+## Later phases (added)
+- **Drum kit port (Phase 3):** Quick Sampler drum tracks become a Drum Rack (same samples; printed processed one-shots for fidelity), with pads mapped to the e-kit's note map. Each drum piece is its own part, so each can be played live or sequenced separately.
 
 ## What I need from you for Phase 1
 - The two Logic exports for *Thoughts* (exact settings to follow), bounced on a machine that has Melodyne.
