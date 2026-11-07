@@ -39,7 +39,7 @@ def _slots(d, limit):
     out = defaultdict(list)
     for m in re.finditer(b"UCuA", d):
         s = m.start()
-        if s >= limit or _u(d, s + 6) != 14 or _u(d, s + 4, 2) != 2: continue
+        if s >= limit or _u(d, s + 6) != 14 or not 1 <= _u(d, s + 4, 2) <= 16: continue  # record version: 2 = Logic 11, 5 = Logic 13
         end = s + 32 + _u(d, s + 28) + 16  # aupreset can run a byte or two past nominal size
         rec = dict(slot=_u(d, s + 18), preset=_cstr(d[s + 50:s + 82]), name=_cstr(d[s + 156:s + 168]),
                    codes=(_fcc(d[s + 168:s + 172]), _fcc(d[s + 172:s + 176]), _fcc(d[s + 176:s + 180])))

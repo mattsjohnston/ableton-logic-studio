@@ -36,6 +36,7 @@ def link(song_dir, export_dir, copy=True):
             report.append((f, f"→ part '{p['name']}'"))
         else:
             extra.append(f)
+    extra = _resolve_duplicates(song, song_dir, export_dir, extra, parts, matched, report, copy)
     ids = {p["id"] for p in song["parts"]}
     for f in extra:
         pid = re.sub(r"[^a-z0-9]+", "-", os.path.splitext(f)[0].lower()).strip("-")
@@ -57,3 +58,51 @@ def _place(song_dir, export_dir, f, pid, copy):
     dst = os.path.join(song_dir, rel); os.makedirs(os.path.dirname(dst), exist_ok=True)
     (shutil.copy2 if copy else os.symlink)(os.path.abspath(os.path.join(export_dir, f)), dst) if not os.path.exists(dst) else None
     return rel
+
+
+def _bars_active(wav, tempo, bpb, n_bars):
+    from .ingest import _read_wav
+    import numpy as np
+    a, sr = _read_wav(wav)
+    spb = int(sr * 60 / tempo * bpb)
+    return {b for b in range(n_bars) if a[b * spb:(b + 1) * spb].size and float(np.abs(a[b * spb:(b + 1) * spb]).max()) > 1e-3}
+
+
+def _bars_with_notes(song_dir, part, bpb):
+    notes = json.load(open(os.path.join(song_dir, part["midi"])))["notes"] if part.get("midi") else []
+    return {int(st // bpb) for _, st, d, _ in notes} | {int((st + d) // bpb) for _, st, d, _ in notes}
+
+
+def _resolve_duplicates(song, song_dir, export_dir, extra, parts, matched, report, copy):
+    """Logic names exports after the track's display name, which can repeat (e.g. two tracks both showing their
+    'Light Harmonics' patch -> 'Light Harmonics.wav' + 'Light Harmonics_1.wav'). For each such group, re-decide which
+    file belongs to which candidate part by comparing where the audio is active with where the part has notes."""
+    bpb = song["time_signature"][0] * 4 / song["time_signature"][1]
+    n_bars = int(song["length_beats"] // bpb) + 2
+    left = []
+    groups = {}
+    for f in extra:
+        m = re.match(r"(.*)_\d+$", os.path.splitext(f)[0])
+        (groups.setdefault(norm(m.group(1)), []) if m else left).append(f)
+    for base, files in groups.items():
+        cands = [p for p in song["parts"] if p["kind"] == "midi" and (norm(p["name"]) == base or
+                 norm(re.sub(r"\.\w+$", "", (p["instrument"].get("preset") or ""))) == base)]
+        named = [f2 for f2 in os.listdir(export_dir) if norm(f2) == base]
+        files = files + named
+        if len(cands) < 2:
+            left += [f for f in files if f not in named]; continue
+        act = {f: _bars_active(os.path.join(export_dir, f), song["tempo"], bpb, n_bars) for f in files}
+        notes = {p["id"]: _bars_with_notes(song_dir, p, bpb) for p in cands}
+        score = lambda f, p: len(act[f] & notes[p["id"]]) / max(1, len(act[f] | notes[p["id"]]))
+        pairs = sorted(((score(f, p), f, p["id"]) for f in files for p in cands), reverse=True)
+        used_f, used_p = set(), set()
+        for sc, f, pid in pairs:
+            if f in used_f or pid in used_p: continue
+            used_f.add(f); used_p.add(pid)
+            p = next(x for x in song["parts"] if x["id"] == pid)
+            dst = os.path.join(song_dir, "stems", "export", f"{pid}.wav")
+            if os.path.exists(dst): os.remove(dst)
+            p["stem"] = _place(song_dir, export_dir, f, pid, copy); matched.add(norm(p["name"]))
+            report.append((f, f"→ part '{p['name']}' (duplicate name resolved by activity, overlap {sc:.2f})"))
+        left += [f for f in files if f not in used_f and f not in named]
+    return left

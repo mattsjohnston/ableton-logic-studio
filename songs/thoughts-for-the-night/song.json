@@ -112,7 +112,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/phone-filter-verse.wav",
       "raw_stem": "stems/raw/phone-filter-verse.wav",
       "regions": 1,
       "inserts": [
@@ -133,7 +133,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/golden-era-plate-1st-half-chorus.wav",
       "raw_stem": "stems/raw/golden-era-plate-1st-half-chorus.wav",
       "regions": 9,
       "inserts": [
@@ -151,7 +151,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/golden-era-plate-2nd-half-chorus.wav",
       "raw_stem": "stems/raw/golden-era-plate-2nd-half-chorus.wav",
       "regions": 5,
       "inserts": [
@@ -170,7 +170,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/golden-era-plate-verse-alt-2.wav",
       "raw_stem": "stems/raw/golden-era-plate-verse-alt-2.wav",
       "regions": 9,
       "inserts": [
@@ -188,7 +188,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/golden-era-plate-transition-vocals.wav",
       "raw_stem": "stems/raw/golden-era-plate-transition-vocals.wav",
       "regions": 4,
       "inserts": [
@@ -207,7 +207,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/textural-layer.wav",
       "raw_stem": "stems/raw/textural-layer.wav",
       "regions": 3,
       "inserts": [
@@ -227,7 +227,7 @@
       "instrument": {
         "type": "audio"
       },
-      "stem": null,
+      "stem": "stems/export/phone-filter-backing-over-chorus.wav",
       "raw_stem": "stems/raw/phone-filter-backing-over-chorus.wav",
       "regions": 6,
       "inserts": [
@@ -250,7 +250,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/fx-2-studio-cuts.wav",
       "midi": "midi/fx-2-studio-cuts.json",
       "notes": 21,
       "regions": 9,
@@ -271,7 +271,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/crash-hollywood-haze.wav",
       "midi": "midi/crash-hollywood-haze.json",
       "notes": 47,
       "regions": 6,
@@ -290,7 +290,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/shaker-1-flashback.wav",
       "midi": "midi/shaker-1-flashback.json",
       "notes": 200,
       "regions": 8,
@@ -336,7 +336,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/hi-hat-1-lowtech-funk.wav",
       "midi": "midi/hi-hat-1-lowtech-funk.json",
       "notes": 247,
       "regions": 6,
@@ -360,7 +360,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/tom-low-flashback.wav",
       "midi": "midi/tom-low-flashback.json",
       "notes": 53,
       "regions": 4,
@@ -383,7 +383,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/kick-1-flashback.wav",
       "midi": "midi/kick-1-flashback.json",
       "notes": 126,
       "regions": 3,
@@ -405,7 +405,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/kick-2-flashback.wav",
       "midi": "midi/kick-2-flashback.json",
       "notes": 114,
       "regions": 3,
@@ -427,7 +427,7 @@
         "name": "Alchemy",
         "preset": "Light Harmonics.acp"
       },
-      "stem": null,
+      "stem": "stems/export/inst-4.wav",
       "midi": "midi/inst-4.json",
       "notes": 290,
       "regions": 11,
@@ -447,7 +447,7 @@
         "name": "Alchemy",
         "preset": "Light Harmonics.acp"
       },
-      "stem": null,
+      "stem": "stems/export/light-harmonics.wav",
       "midi": "midi/light-harmonics.json",
       "notes": 8,
       "regions": 2,
@@ -468,7 +468,7 @@
         "preset": "Blade Of Canada",
         "state": "instruments/lead-line-synth.aupreset"
       },
-      "stem": null,
+      "stem": "stems/export/lead-line-synth.wav",
       "midi": "midi/lead-line-synth.json",
       "notes": 130,
       "regions": 6,
@@ -488,7 +488,7 @@
         "preset": "Da Fonk",
         "state": "instruments/bass-line.aupreset"
       },
-      "stem": null,
+      "stem": "stems/export/bass-line.wav",
       "midi": "midi/bass-line.json",
       "notes": 112,
       "regions": 5,
@@ -507,7 +507,7 @@
         "preset": "Desynk",
         "state": "instruments/verse-backing-synth.aupreset"
       },
-      "stem": null,
+      "stem": "stems/export/verse-backing-synth.wav",
       "midi": "midi/verse-backing-synth.json",
       "notes": 154,
       "regions": 5,
@@ -524,7 +524,7 @@
         "name": "Sculpture",
         "preset": null
       },
-      "stem": null,
+      "stem": "stems/export/amped-synth-lead.wav",
       "midi": "midi/amped-synth-lead.json",
       "notes": 294,
       "regions": 6,
@@ -548,7 +548,7 @@
         "name": "Alchemy",
         "preset": "Voice Becomes Flute.acp"
       },
-      "stem": null,
+      "stem": "stems/export/voice-becomes-flute.wav",
       "midi": "midi/voice-becomes-flute.json",
       "notes": 124,
       "regions": 1,
@@ -569,7 +569,7 @@
         "preset": "New Vision sw26",
         "state": "instruments/new-vision.aupreset"
       },
-      "stem": null,
+      "stem": "stems/export/new-vision.wav",
       "midi": "midi/new-vision.json",
       "notes": 28,
       "regions": 2,
@@ -779,5 +779,6 @@
         }
       }
     }
-  }
+  },
+  "mix": "stems/export/mix.wav"
 }
