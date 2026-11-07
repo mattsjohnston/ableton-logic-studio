@@ -245,7 +245,7 @@ def make_drum_track(protos, part_ids, song, song_dir, project_dir=None, name="Dr
     for idx, p in enumerate(parts):
         b = copy.deepcopy(D.branch); b.set("Id", str(idx))
         als.setv(b, "Name/EffectiveName", p["name"]); als.setv(b, "Name/UserName", p["name"])
-        als.setv(b, "BranchInfo/ReceivingNote", gm[p["id"]]); als.setv(b, "BranchInfo/SendingNote", 60)
+        als.setv(b, "BranchInfo/ReceivingNote", 128 - gm[p["id"]]); als.setv(b, "BranchInfo/SendingNote", 60)  # Live stores pad note as 128 - MIDI note (demo: snare 38 -> 90)
         als.setv(b, "BranchInfo/ChokeGroup", 0)
         als.setv(b, "Color", 8 + idx % 14); als.setv(b, "AutoColored", False)
         path = sample_for_part(p, song, samples)

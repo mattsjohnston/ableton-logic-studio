@@ -54,7 +54,7 @@ class Build(unittest.TestCase):
             t, gm = dr.make_drum_track(self.P, ids, self.song, SONG_DIR, project_dir=self.tmp, info=info)
         ET.fromstring(ET.tostring(t))  # serialises
         self.assertEqual(gm, {"kick-1-flashback": 36, "kick-2-flashback": 35, "tom-low-flashback": 41, "snare-2-deep-end": 38})
-        pads = {int(b.find("BranchInfo/ReceivingNote").get("Value")): b for b in t.iter("DrumBranch")}
+        pads = {128 - int(b.find("BranchInfo/ReceivingNote").get("Value")): b for b in t.iter("DrumBranch")}
         self.assertEqual(sorted(pads), [35, 36, 38, 41])
         for n in (35, 36, 41):
             sims = pads[n].findall(".//OriginalSimpler")
