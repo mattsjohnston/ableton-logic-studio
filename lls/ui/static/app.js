@@ -1,5 +1,6 @@
 // LLS band-set editor. Vanilla ES module, no build step. Data contract: docs/model.md.
 import { Preview } from './preview.js';
+import { initTips, tipHtml } from './tip.js';
 
 const $ =(s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -14,6 +15,13 @@ const TR = [
   ['midi-clip', 'MIDI clip'], ['click', 'Click'], ['dropped', 'Dropped'],
 ];
 const TLABEL = Object.fromEntries(TR);
+const TDESC = {
+  'live-vocal': 'Sung live into a mic on a vocal rig.', 'live-midi': 'Played live on a keyboard rig through the part’s instrument in Live.',
+  'live-looped': 'Triggered live from a grid controller.', 'live-drums': 'Played live on an e-kit through a Drum Rack.',
+  'live-guitar': 'Played live on guitar/bass through an interface input.', 'backing-audio': 'The laptop plays the exported stem.',
+  'audio-loop': 'The laptop plays the stem as a looping audio clip.', 'midi-clip': 'The laptop plays the MIDI through the instrument in Live (Analog Lab / Drum Rack only).',
+  click: 'Replaced by the generated click.', dropped: 'Left out of the set.',
+};
 const LIVE = new Set(['live-vocal', 'live-midi', 'live-looped', 'live-drums', 'live-guitar']);
 const RIG_KINDS = ['keys', 'drums', 'guitar', 'bass', 'vocal', 'grid'];
 const RIG_ICON = { keys: '🎹', drums: '🥁', guitar: '🎸', bass: '🎸', vocal: '🎤', grid: '▦' };
@@ -44,7 +52,8 @@ const S = {
   imp: null,                                                   // Import view state
   sls: [], slSlug: pref.get('setlist', null), sl: null, slSaved: '', slJob: null, slResult: null, slErr: '',
   pv: { mode: pref.get('pv.mode', 'lineup'), click: pref.get('pv.click', false), vol: pref.get('pv.vol', 0.8),
-        loop: null, solo: new Set(), mute: new Set(), state: {} },
+        loop: null, solo: new Set(), mute: new Set(), state: {},
+        cues: false, cuesVol: pref.get('pv.cuesVol', 0.9), cue: null, cueSig: '', busy: null },
   tlW: 0,
 };
 if (S.view === 'import') S.view = 'arrange';  // the import view needs a mode; open it from the song picker
@@ -234,7 +243,7 @@ async function refreshSongs() { S.songs = await api('GET', '/songs'); renderTop(
 
 async function loadSong(slug) {
   const [song, activity] = await Promise.all([api('GET', `/songs/${slug}`), api('GET', `/songs/${slug}/activity`).catch(() => null)]);
-  if (slug !== S.slug) { PV.reset(); S.pv.solo.clear(); S.pv.mute.clear(); S.pv.loop = null; }
+  if (slug !== S.slug) { PV.reset(); S.pv.solo.clear(); S.pv.mute.clear(); S.pv.loop = null; S.pv.cue = null; S.pv.cueSig = ''; S.pv.cues = !!(song.options || {}).cues; }
   S.slug = slug; S.song = normalize(song); S.saved = JSON.stringify(S.song); S.activity = activity;
   S.hist = []; S.fut = []; S.selSec = null; S.highlight = null; S.shellKey = '';
   const lids = Object.keys(S.song.lineups);
@@ -333,26 +342,28 @@ function renderMain() {
 }
 
 function chip(t, attrs = '', extra = '') {
-  return `<button class="chip ${t === 'dropped' ? 'dropped' : ''} ${extra}" style="--tc:var(--t-${t})" ${attrs}>${esc(TLABEL[t] || t)}</button>`;
+  const tip = /data-tip/.test(attrs) ? '' : `data-tip-rich="chip" data-t="${esc(t)}"`;
+  return `<button class="chip ${t === 'dropped' ? 'dropped' : ''} ${extra}" style="--tc:var(--t-${t})" ${tip} ${attrs}>${esc(TLABEL[t] || t)}</button>`;
 }
 
-function instBadge(part) {
+function instBadge(part, tip = true) {
+  if (!tip) return instBadge(part).replace(/ data-tip="[^"]*"/, '');
   const i = part.instrument || {};
-  if (i.type === 'analoglab') return `<span class="badge analoglab" title="Analog Lab V preset (AU state injected)"><b>AL</b> ${esc(i.preset || '')}</span>`;
-  if (i.type === 'drumrack') return `<span class="badge drumrack"><b>Rack</b> Drum Rack</span>`;
+  if (i.type === 'analoglab') return `<span class="badge analoglab" data-tip="Analog Lab V · ${esc(i.preset || '')}&#10;Plays in Live: the preset’s AU state is injected"><b>AL</b> ${esc(i.preset || '')}</span>`;
+  if (i.type === 'drumrack') return `<span class="badge drumrack" data-tip="Drum Rack&#10;Built in Live from the part’s drum notes"><b>Rack</b> Drum Rack</span>`;
   if (i.type === 'logic-builtin') {
     const pre = i.preset ? ' · ' + String(i.preset).replace(/\.\w+$/, '') : '';
-    return `<span class="badge logic" title="Logic built-in: not playable in Live — needs a stem"><b>Logic</b> ${esc(i.name || '')}${esc(pre)}</span>`;
+    return `<span class="badge logic" data-tip="Logic ${esc(i.name || '')}${esc(pre)}&#10;Logic-only instrument: Live can’t play it, so it needs a stem"><b>Logic</b> ${esc(i.name || '')}${esc(pre)}</span>`;
   }
-  if (i.type === 'audio' || part.kind === 'audio') return `<span class="badge audio" title="${esc(part.stem ? 'exported stem' : part.raw_stem ? 'raw stem (no FX)' : 'no stem yet')}"><b>Audio</b> ${part.stem ? 'stem' : part.raw_stem ? 'raw stem' : 'no stem'}</span>`;
+  if (i.type === 'audio' || part.kind === 'audio') return `<span class="badge audio" data-tip="${esc(part.stem ? 'exported stem' : part.raw_stem ? 'raw stem (no FX)' : 'no stem yet')}"><b>Audio</b> ${part.stem ? 'stem' : part.raw_stem ? 'raw stem' : 'no stem'}</span>`;
   return `<span class="badge">${esc(i.type || part.kind || '?')}</span>`;
 }
 
-function whoLabel(pid) {
+function whoLabel(pid, tip = true) {
   const a = asg(pid);
   if (!a?.performer || !LIVE.has(a.treatment)) return '';
   const p = bandPerf(a.performer);
-  return `<span class="who" title="${esc((p?.name || a.performer) + ' · ' + (a.rig || ''))}">${esc(p?.name || a.performer)}</span>`;
+  return `<span class="who" ${tip ? `data-tip="${esc((p?.name || a.performer) + ' · ' + (a.rig || ''))}"` : ''}>${esc(p?.name || a.performer)}</span>`;
 }
 
 // ---------- Arrange view
@@ -362,21 +373,21 @@ VIEWS.arrange = {
     <div class="toolbar">
       <span class="song-meta" id="meta"></span>
       <span class="sep"></span>
-      <div class="palette" title="Drag a treatment onto a part (whole song) or onto a cell (that section only)">
-        ${TR.map(([t]) => chip(t, `draggable="true" data-drag-t="${t}" data-act="noop" tabindex="-1"`, 'mini')).join('')}
+      <div class="palette" data-tip="Drag a treatment onto a part (whole song) or onto a cell (that section only)">
+        ${TR.map(([t]) => chip(t, `draggable="true" data-drag-t="${t}" data-act="noop" tabindex="-1" data-tip-rich="chip" data-t="${t}" data-palette="1" data-tip-pos="below"`, 'mini')).join('')}
       </div>
       <span class="sep"></span>
-      <button class="btn small" data-act="split" title="Split selected section (S) — or ⌥-click a section">Split</button>
-      <button class="btn small" data-act="merge" title="Merge with next section (M)">Merge →</button>
-      <button class="btn small" data-act="vamp" title="Toggle vamp/loop on the selected section (V)">Vamp</button>
+      <button class="btn small" data-act="split" data-tip="Split section&#10;Splits the selected section in half (snaps to bars); ⌥-click a section to split at a bar" data-tip-key="S">Split</button>
+      <button class="btn small" data-act="merge" data-tip="Merge with next&#10;Joins the selected section with the one after it" data-tip-key="M">Merge →</button>
+      <button class="btn small" data-act="vamp" data-tip="Vamp&#10;The selected section’s scene loops until you launch the next one" data-tip-key="V">Vamp</button>
       <span class="sep"></span>
-      <label class="hint" title="Zoom (0 = fit)">Zoom <input type="range" id="zoom" min="0" max="48" step="2" value="${S.zoom}"></label>
+      <label class="hint" data-tip="Zoom&#10;Pixels per bar; 0 fits the song to the window">Zoom <input type="range" id="zoom" min="0" max="48" step="2" value="${S.zoom}"></label>
       <span class="sep"></span>
       <span class="lbl">Set</span>
-      <button class="ptog" data-act="opt" data-opt="cues" title="Spoken section cues on the click output, one bar before each section (song.json options.cues)">Cues</button>
-      <button class="ptog" data-act="opt" data-opt="auto_advance" title="Scenes follow on to the next section automatically (vamp sections hold) — options.auto_advance">Auto-advance</button>
+      <button class="ptog" data-act="opt" data-opt="cues" data-tip="Spoken cues in the Live set&#10;A voice names each section one bar before it, on the click output (options.cues)&#10;Also the default for the preview’s Cues toggle">Cues</button>
+      <button class="ptog" data-act="opt" data-opt="auto_advance" data-tip="Auto-advance&#10;Scenes follow on to the next section automatically; vamp sections hold (options.auto_advance)">Auto-advance</button>
       <span class="spacer" style="flex:1"></span>
-      <button class="btn small" data-act="reimport" title="Re-import the Logic project and/or link newly exported stems">↻ Re-import</button>
+      <button class="btn small" data-act="reimport" data-tip="Re-import&#10;Re-read the Logic project and/or link newly exported stems">↻ Re-import</button>
     </div>
     <div class="toolbar transport" id="transport"></div>
     <div class="toolbar inspector" id="inspector" hidden></div>
@@ -410,11 +421,11 @@ VIEWS.arrange = {
       const bars = Math.round((s.end - s.start) / bp);
       const inner = S.renaming === s.id
         ? `<input id="rename" value="${esc(s.name)}" aria-label="Section name">`
-        : `<span class="sname">${esc(s.name)}</span>${s.vamp ? '<span class="vamp" title="vamp">∞</span>' : ''}${s.cue ? `<span class="cue-mk" title="cue: “${esc(s.cue)}”">❝</span>` : ''}${S.pv.loop === s.id ? '<span class="loop-mk" title="preview loops this section">⟲</span>' : ''}<span class="sbars">${bars}b</span>`;
+        : `<span class="sname">${esc(s.name)}</span>${s.vamp ? '<span class="vamp">∞</span>' : ''}${s.cue ? '<span class="cue-mk">❝</span>' : ''}${S.pv.loop === s.id ? '<span class="loop-mk">⟲</span>' : ''}<span class="sbars">${bars}b</span>`;
       secs += `<div class="sec ${S.selSec === s.id ? 'sel' : ''} ${hl.section === s.id ? 'hl' : ''}" data-sid="${esc(s.id)}"
         style="left:${pct(s.start)}%;width:${pct(s.end - s.start)}%;--sc:${SEC_COLORS[i % SEC_COLORS.length]}"
-        title="${esc(s.name)} · bar ${s.start / bp + 1}–${s.end / bp + 1}">${inner}</div>`;
-      if (i > 0) secs += `<div class="bound" data-i="${i}" style="left:${pct(s.start)}%" title="Drag to move boundary (snaps to bars)"></div>`;
+        ${S.renaming === s.id ? '' : 'data-tip-rich="sec" data-tip-pos="below"'}>${inner}</div>`;
+      if (i > 0) secs += `<div class="bound" data-i="${i}" style="left:${pct(s.start)}%" data-tip="${esc(song.sections[i - 1].name)} | ${esc(s.name)} · bar ${s.start / bp + 1}&#10;Drag to move the boundary (snaps to bars)"></div>`;
     });
     secs += '<div class="split-guide" id="split-guide"></div>';
 
@@ -436,23 +447,23 @@ VIEWS.arrange = {
         }
         cells += `<div class="cell ${cls} t-${t} ${ov[s.id] ? 'ovr' : ''} ${hl.section === s.id ? 'hl-sec' : ''}" data-part="${esc(p.id)}" data-sid="${esc(s.id)}"
           style="left:${pct(s.start)}%;width:${pct(s.end - s.start)}%;--tc:var(--t-${t})"
-          title="${esc(p.name)} · ${esc(s.name)}: ${esc(TLABEL[t])}${ov[s.id] ? ' (override)' : ''}${act === null ? ' · activity unknown' : act ? '' : ' · silent'}"><div class="bars">${bars}</div></div>`;
+          data-tip-rich="cell"><div class="bars">${bars}</div></div>`;
       }
       const aud = pvAudible(p);
       rows += `<div class="trow part ${hl.part === p.id ? 'hl' : ''} ${aud ? '' : 'pv-off'}" data-part="${esc(p.id)}">
-        <div class="ph" data-part="${esc(p.id)}" data-droppart="1">
+        <div class="ph" data-part="${esc(p.id)}" data-droppart="1" data-tip-rich="part" data-tip-pos="right">
           <span class="issue-dot"></span>
-          <div class="pmeta"><span class="pname" title="${esc(p.name)} (${esc(p.id)})">${esc(p.name)}</span>${instBadge(p)}</div>
-          ${whoLabel(p.id)}
-          <span class="sm" title="${esc(aud ? 'Preview: solo / mute' : pvWhyOff(p))}"><button class="smb ${S.pv.solo.has(p.id) ? 'on' : ''}" data-act="solo" data-part="${esc(p.id)}" tabindex="-1" aria-label="Solo ${esc(p.name)}">S</button><button class="smb m ${S.pv.mute.has(p.id) ? 'on' : ''}" data-act="mute" data-part="${esc(p.id)}" tabindex="-1" aria-label="Mute ${esc(p.name)}">M</button></span>
-          ${chip(lt, `draggable="true" data-drag-t="${lt}" data-act="tmenu" data-part="${esc(p.id)}" title="Treatment in this lineup — click to change, drag onto a cell to override one section"`)}
+          <div class="pmeta"><span class="pname">${esc(p.name)}</span><div class="prow2">${synthOf(p) ? `<span class="pv-syn">♪ synth preview</span><span class="pv-syn-i">${esc((p.instrument || {}).name || '')}</span>` : instBadge(p, false)}</div></div>
+          ${whoLabel(p.id, false)}
+          <span class="sm" data-tip="${esc(aud ? `Preview solo / mute\n${synthOf(p) ? 'Browser synth (MIDI-only part)' : 'Stem playback'}` : `Not in the preview\n${pvWhyOff(p)}`)}"><button class="smb ${S.pv.solo.has(p.id) ? 'on' : ''}" data-act="solo" data-part="${esc(p.id)}" tabindex="-1" aria-label="Solo ${esc(p.name)}">S</button><button class="smb m ${S.pv.mute.has(p.id) ? 'on' : ''}" data-act="mute" data-part="${esc(p.id)}" tabindex="-1" aria-label="Mute ${esc(p.name)}">M</button></span>
+          ${chip(lt, `draggable="true" data-drag-t="${lt}" data-act="tmenu" data-part="${esc(p.id)}" data-tip-rich="chip" data-t="${lt}"`)}
         </div>
         <div class="lane" style="width:${W}px">${cells}</div></div>`;
     }
     $('#tl-inner').innerHTML = `
       <div class="playhead" id="playhead"></div>
-      <div class="trow head"><div class="ph">Bar</div><div class="lane" id="ruler" style="width:${W}px" title="Click to move the playhead">${ruler}</div></div>
-      <div class="trow secs"><div class="ph" title="⌥-click a section to split at a bar · drag edges to move · double-click to rename · right-click for more">Sections <span class="hint" style="margin-left:auto">${esc(lineup().name)}</span></div><div class="lane" id="sec-lane" style="width:${W}px">${secs}</div></div>
+      <div class="trow head"><div class="ph">Bar</div><div class="lane" id="ruler" style="width:${W}px" data-tip="Ruler&#10;Click to move the playhead (playback jumps there)" data-tip-pos="below">${ruler}</div></div>
+      <div class="trow secs"><div class="ph" data-tip="Sections&#10;⌥-click a section to split at a bar · drag edges to move · double-click to rename · right-click for more" data-tip-pos="below">Sections <span class="hint" style="margin-left:auto">${esc(lineup().name)}</span></div><div class="lane" id="sec-lane" style="width:${W}px">${secs}</div></div>
       ${rows}`;
     const ri = $('#rename');
     if (ri) { ri.focus(); ri.select(); }
@@ -462,18 +473,50 @@ VIEWS.arrange = {
 
 // ---------- preview playback (Web Audio; see preview.js)
 const PV = new Preview((st) => { S.pv.state = st; if (S.view === 'arrange' && $('#transport')) renderTransport(); });
+let TIP = null;
 const spb = () => 60 / S.song.tempo;
 const songSecs = () => totalBeats() * spb();
 const stemOf = (p) => p.stem || p.raw_stem;
+const synthOf = (p) => !stemOf(p) && !!p.midi;          // MIDI-only part: the preview plays its notes on a browser synth
 
 function pvAudible(p) {
-  if (!stemOf(p)) return false;
+  if (!stemOf(p) && !synthOf(p)) return false;
   if (S.pv.mode === 'full') return true;
   return S.song.sections.some((s) => LAPTOP.has(effT(p, s.id)));
 }
 function pvWhyOff(p) {
-  if (!stemOf(p)) return p.kind === 'midi' ? 'No stem: MIDI-only, not in the preview (export its stem from Logic)' : 'No stem';
+  if (!stemOf(p) && !synthOf(p)) return p.kind === 'midi' ? 'No stem and no MIDI notes' : 'No stem: export it from Logic';
   return `Not played by the laptop in “${lineup().name}” (${TLABEL[lineupT(p)]})`;
+}
+
+// browser-synth voice for a MIDI-only part: drum voices by name (or GM pitch), else a lead/bass/pad/keys preset
+const DRUMISH = /kick|snare|hat|tom|crash|cymbal|ride|shaker|clap|perc|rim/i;
+function voiceFor(p) {
+  const nm = `${p.name || ''} ${p.id}`, inst = p.instrument || {};
+  if (p.role_hint === 'drums' || inst.name === 'Quick Sampler' || inst.type === 'drumrack' || DRUMISH.test(nm)) {
+    const m = /kick|snare|open.?hat|hat|tom|crash|cymbal|ride|shaker|clap|rim/i.exec(nm);
+    const kind = m ? m[0].toLowerCase().replace(/[^a-z]/g, '').replace('cymbal', 'crash') : null;
+    return { drum: true, kind, size: /low|floor/i.test(nm) ? 'low' : /high|\bhi\b/i.test(nm) ? 'high' : 'mid' };
+  }
+  return { drum: false, kind: ['bass', 'lead', 'pad'].includes(p.role_hint) ? p.role_hint : 'keys' };
+}
+const NOTES = new Map();   // `${slug}/${pid}` -> Promise<notes | null>
+function loadNotes(pid) {
+  const k = `${S.slug}/${pid}`;
+  if (!NOTES.has(k)) NOTES.set(k, api('GET', `/songs/${encodeURIComponent(S.slug)}/midi/${encodeURIComponent(pid)}`).then((r) => r.notes || []).catch(() => null));
+  return NOTES.get(k);
+}
+
+// spoken cues: rendered server-side (lls.build.cues_wav); the signature tells when edits made the rendered file stale
+const cueSig = () => JSON.stringify([S.song.tempo, S.song.time_signature, S.song.length_beats, S.song.sections.map((s) => [s.name, s.start, s.cue || ''])]);
+const cuesStale = () => !S.pv.cue || S.pv.cueSig !== cueSig();
+async function ensureCues() {
+  const sig = cueSig();
+  if (S.pv.cue && S.pv.cueSig === sig) return S.pv.cue;
+  const r = await api('POST', `/songs/${encodeURIComponent(S.slug)}/cues.wav`, { song: S.song });
+  if (S.pv.cue && S.pv.cue.hash !== r.hash) PV.forget('cues:' + S.pv.cue.hash);
+  S.pv.cue = r; S.pv.cueSig = sig;
+  return r;
 }
 
 function pvPlan() {
@@ -489,25 +532,50 @@ function pvPlan() {
       if (wins.length) sources.push({ key: `${S.slug}/${p.id}`, url: url(p.id), pid: p.id, windows: wins });
     }
   }
+  const synths = [];
+  if (!(S.pv.mode === 'full' && song.mix && !anySM)) {     // the mix bounce already contains the MIDI-only parts
+    for (const p of song.parts) {
+      if (!synthOf(p)) continue;
+      const wins = S.pv.mode === 'full' ? null : song.sections.filter((s) => LAPTOP.has(effT(p, s.id))).map((s) => [s.start * k, s.end * k]);
+      if (!wins || wins.length) synths.push({ pid: p.id, voice: voiceFor(p), windows: wins });
+    }
+  }
   const ls = S.pv.loop && secById(S.pv.loop);
-  return { sources, loop: ls ? { a: ls.start * k, b: ls.end * k } : null, tempo: song.tempo, bpb: bpb(), total: songSecs() };
+  return { sources, synths, loop: ls ? { a: ls.start * k, b: ls.end * k } : null, tempo: song.tempo, bpb: bpb(), total: songSecs() };
 }
 
 function pvGain(pid) {
+  if (pid === '_cues') return S.pv.cues ? S.pv.cuesVol : 0;
   if (pid === '_mix') return 1;
   if (S.pv.mute.has(pid)) return 0;
   return S.pv.solo.size && !S.pv.solo.has(pid) ? 0 : 1;
 }
 
-function pvPlay(from = PV.pos()) {
+let pvTok = 0;
+async function pvPlay(from = PV.pos()) {
   if (!S.song) return;
+  const tok = ++pvTok, slug = S.slug, k = spb();
   const plan = pvPlan();
-  if (!plan.sources.length) { toast(S.pv.mode === 'full' ? 'No stems or mix linked yet — Re-import → link stems' : 'Nothing in this lineup plays from the laptop (or no stems linked)'); return; }
+  if (!plan.sources.length && !plan.synths.length && !S.pv.cues) { toast(S.pv.mode === 'full' ? 'No stems or mix linked yet — Re-import → link stems' : 'Nothing in this lineup plays from the laptop (or no stems linked)'); return; }
   PV.setGains(pvGain); PV.setClick(S.pv.click); PV.setVolume(S.pv.vol);
+  const needCues = S.pv.cues && cuesStale();
+  if (needCues || plan.synths.some((x) => !NOTES.has(`${slug}/${x.pid}`))) { S.pv.busy = needCues ? 'cues' : 'notes'; renderTransport(); }
+  const [cue, notes] = await Promise.all([
+    S.pv.cues ? ensureCues().catch((e) => { toast('Cues: ' + e.message, true); return null; }) : null,
+    Promise.all(plan.synths.map((x) => loadNotes(x.pid))),
+  ]);
+  if (tok !== pvTok || slug !== S.slug) return;          // stopped / restarted / switched song meanwhile
+  S.pv.busy = null;
+  if (cue) plan.sources.push({ key: 'cues:' + cue.hash, url: cue.url, pid: '_cues', windows: null });
+  plan.synths = plan.synths.map((x, i) => notes[i] && notes[i].length ? {
+    ...x, notes: notes[i].map((n) => [n[1] * k, Math.max(0.02, n[2] * k), n[0], n[3] ?? 100]).sort((a, b) => a[0] - b[0]),
+  } : null).filter(Boolean);
   PV.play(from, plan);
   pvAnimate();
 }
-function pvToggle() { if (PV.playing || PV.preparing) { PV.stop(); renderTransport(); drawPlayhead(); } else pvPlay(); }
+function pvToggle() {
+  if (PV.playing || PV.preparing || S.pv.busy) { pvTok++; S.pv.busy = null; PV.stop(); renderTransport(); drawPlayhead(); } else pvPlay();
+}
 function pvFromSection(sid) { const s = secById(sid); if (s) pvPlay(s.start * spb()); }
 function pvLoop(sid) {
   S.pv.loop = S.pv.loop === sid ? null : sid;
@@ -518,6 +586,12 @@ let pvRestartT = 0;
 function pvRestartSoon() {
   if (!PV.playing) return;
   clearTimeout(pvRestartT); pvRestartT = setTimeout(() => { if (PV.playing) pvPlay(PV.pos()); }, 150);
+}
+function pvSetCues(on) {
+  S.pv.cues = on;
+  const inPlan = PV.nodes.some((n) => n.pid === '_cues');
+  if (PV.playing && on && (!inPlan || cuesStale())) pvPlay(PV.pos()); else PV.setGains(pvGain);
+  renderTransport();
 }
 function pvSoloMute(kind, pid) {
   const set = S.pv[kind];
@@ -549,32 +623,40 @@ function updateClock() { const c = $('#pv-clock'); if (c && S.song) c.textConten
 function renderTransport() {
   const el = $('#transport'); if (!el || !S.song) return;
   const st = S.pv.state || {}, plan = pvPlan(), sel = secById(S.selSec), lp = S.pv.loop && secById(S.pv.loop);
-  const loaded = plan.sources.filter((s) => PV.status(s.key) === 'ok').length;
+  const stems = plan.sources.filter((s) => s.pid !== '_cues');
+  const loaded = stems.filter((s) => PV.status(s.key) === 'ok').length;
   const errs = plan.sources.filter((s) => PV.status(s.key) === 'err');
-  const silent = S.pv.mode === 'lineup' ? S.song.parts.filter((p) => !stemOf(p) && S.song.sections.some((s) => LAPTOP.has(effT(p, s.id)))) : [];
+  const silent = S.song.parts.filter((p) => !stemOf(p) && !synthOf(p) && (S.pv.mode === 'full' || S.song.sections.some((s) => LAPTOP.has(effT(p, s.id)))));
+  const nsyn = plan.synths.length;
   let status;
-  if (st.preparing || st.loading) status = `<span class="spin sm"></span> Loading stems ${loaded}/${plan.sources.length}…`;
-  else if (!plan.sources.length) status = S.pv.mode === 'full' ? 'No stems linked yet' : 'Nothing plays from the laptop in this lineup';
-  else status = `${plan.sources.length === 1 && plan.sources[0].pid === '_mix' ? 'full mix bounce' : `${plan.sources.length} stem${plan.sources.length === 1 ? '' : 's'}`}${loaded < plan.sources.length ? ` · ${loaded} loaded` : ''}`;
-  const warn = [errs.length ? `<span class="pv-err" title="${esc(errs.map((s) => `${s.pid}: ${PV.error(s.key)}`).join('\n'))}">⚠ ${errs.length} failed</span>` : '',
-    silent.length ? `<span class="pv-warn" title="${esc(silent.map((p) => p.name).join(', '))} — MIDI-only, no stem: silent in the preview (Live plays them)">${silent.length} MIDI-only silent</span>` : ''].join('');
-  const playing = PV.playing || st.preparing;
+  if (S.pv.busy === 'cues') status = '<span class="spin sm"></span> Rendering cues…';
+  else if (S.pv.busy) status = '<span class="spin sm"></span> Loading MIDI…';
+  else if (st.preparing || st.loading) status = `<span class="spin sm"></span> Loading stems ${loaded}/${stems.length}…`;
+  else if (!stems.length && !nsyn) status = S.pv.mode === 'full' ? 'No stems linked yet' : 'Nothing plays from the laptop in this lineup';
+  else status = [stems.length === 1 && stems[0].pid === '_mix' ? 'full mix bounce' : stems.length ? `${stems.length} stem${stems.length === 1 ? '' : 's'}` : '',
+    nsyn ? `<span class="syn" data-tip="${esc(`Synth preview · ${nsyn} MIDI-only part${nsyn === 1 ? '' : 's'}\n${plan.synths.map((x) => partById(x.pid)?.name || x.pid).join(', ')}\nNo stem exported, so the browser plays the notes on a simple synth. Live plays the real instrument.`)}">${nsyn} synth</span>` : '']
+    .filter(Boolean).join(' · ') + (loaded < stems.length ? ` · ${loaded} loaded` : '');
+  const warn = [errs.length ? `<span class="pv-err" data-tip="${esc(`Failed to load\n${errs.map((s) => `${s.pid}: ${PV.error(s.key)}`).join('\n')}`)}">⚠ ${errs.length} failed</span>` : '',
+    silent.length ? `<span class="pv-warn" data-tip="${esc(`Silent in the preview\n${silent.map((p) => p.name).join(', ')}\nNo stem and no MIDI notes`)}">${silent.length} silent</span>` : ''].join('');
+  const playing = PV.playing || st.preparing || !!S.pv.busy;
+  const stale = S.pv.cues && S.pv.cue && cuesStale();
   el.innerHTML = `
-    <button class="btn icon tp ${playing ? 'on' : ''}" data-act="pv-toggle" title="${playing ? 'Stop' : 'Play'} (Space)" aria-label="${playing ? 'Stop' : 'Play'}">${playing ? '■' : '▶'}</button>
-    <button class="btn small" data-act="pv-from" ${sel ? '' : 'disabled'} title="Play from the selected section (P)">▶ ${esc(sel ? sel.name : 'section')}</button>
-    <button class="btn small ${lp ? 'act' : ''}" data-act="pv-loop" ${sel || lp ? '' : 'disabled'} title="Loop the selected section (L)">⟲ ${lp ? 'Looping ' + esc(lp.name) : 'Loop'}</button>
-    <button class="btn icon small" data-act="pv-zero" title="Back to bar 1 (Home)" aria-label="Back to start">⇤</button>
+    <button class="btn icon tp ${playing ? 'on' : ''}" data-act="pv-toggle" data-tip="${playing ? 'Stop' : 'Play'}" data-tip-key="Space" aria-label="${playing ? 'Stop' : 'Play'}">${playing ? '■' : '▶'}</button>
+    <button class="btn small" data-act="pv-from" ${sel ? '' : 'disabled'} data-tip="Play from the selected section" data-tip-key="P">▶ ${esc(sel ? sel.name : 'section')}</button>
+    <button class="btn small ${lp ? 'act' : ''}" data-act="pv-loop" ${sel || lp ? '' : 'disabled'} data-tip="Loop the selected section&#10;Click again to stop looping" data-tip-key="L">⟲ ${lp ? 'Looping ' + esc(lp.name) : 'Loop'}</button>
+    <button class="btn icon small" data-act="pv-zero" data-tip="Back to bar 1" data-tip-key="Home" aria-label="Back to start">⇤</button>
     <span class="pv-clock" id="pv-clock">${fmtPos(PV.pos())}</span>
     <span class="sep"></span>
     <div class="seg" role="group" aria-label="Preview mode">
-      <button data-act="pv-mode" data-mode="lineup" aria-pressed="${S.pv.mode === 'lineup'}" title="What the laptop plays in “${esc(lineup().name)}”: backing audio, audio loops, and MIDI clips that have a stem">Lineup backing</button>
-      <button data-act="pv-mode" data-mode="full" aria-pressed="${S.pv.mode === 'full'}" title="The whole song: the full-mix bounce if linked (stems when soloing/muting), else every stem">Full song</button>
+      <button data-act="pv-mode" data-mode="lineup" aria-pressed="${S.pv.mode === 'lineup'}" data-tip="Lineup backing&#10;What the laptop plays in “${esc(lineup().name)}”: backing audio, audio loops and MIDI clips (stems, or the synth for MIDI-only parts)">Lineup backing</button>
+      <button data-act="pv-mode" data-mode="full" aria-pressed="${S.pv.mode === 'full'}" data-tip="Full song&#10;The full-mix bounce if linked (stems when soloing/muting), else every stem + synth">Full song</button>
     </div>
-    <button class="ptog" data-act="pv-click" aria-pressed="${S.pv.click}" title="Click from the song tempo">Click</button>
-    <label class="hint" title="Preview volume">Vol <input type="range" id="pv-vol" min="0" max="1" step="0.05" value="${S.pv.vol}"></label>
-    ${S.pv.solo.size || S.pv.mute.size ? `<button class="btn small" data-act="pv-clear" title="Clear solo/mute">Clear S/M</button>` : ''}
+    <button class="ptog" data-act="pv-click" aria-pressed="${S.pv.click}" data-tip="Click&#10;Metronome at the song tempo, accent on the downbeat">Click</button>
+    <span class="pv-cues"><button class="ptog ${stale ? 'stale' : ''}" data-act="pv-cues" aria-pressed="${S.pv.cues}" data-tip="${esc(`Spoken cues in the preview\nThe voice names each section one bar before it (macOS say, as in the Live set)\n${stale ? 'Sections changed: re-rendered on the next play' : S.pv.cue ? 'Rendered and cached' : 'Rendered on first play'} · song default ${(S.song.options || {}).cues ? 'on' : 'off'}`)}">Cues</button><input type="range" id="pv-cvol" min="0" max="1.5" step="0.05" value="${S.pv.cuesVol}" aria-label="Cue volume" data-tip="Cue volume" ${S.pv.cues ? '' : 'disabled'}></span>
+    <label class="hint" data-tip="Preview volume">Vol <input type="range" id="pv-vol" min="0" max="1" step="0.05" value="${S.pv.vol}"></label>
+    ${S.pv.solo.size || S.pv.mute.size ? `<button class="btn small" data-act="pv-clear" data-tip="Clear solo / mute">Clear S/M</button>` : ''}
     <span class="pv-status">${status}${warn}</span>
-    <span class="hint pv-note" title="Rehearsal aid only. On stage the set runs in Ableton Live.">preview · Live runs the show</span>`;
+    <span class="hint pv-note" data-tip="Rehearsal aid only&#10;On stage the set runs in Ableton Live.">preview · Live runs the show</span>`;
 }
 
 function renderInspector() {
@@ -596,7 +678,99 @@ function renderInspector() {
     <input class="inp" id="sec-cue" style="width:200px" data-sec="cue" value="${esc(s.cue || '')}" placeholder="${esc(s.name)} (spoken)" aria-label="Cue text override">
     <span class="hint">${cuesOn ? 'spoken one bar before the section' : 'cues are off for this song (toggle Cues above)'}</span>
     <span class="sep"></span>
-    <button class="ptog" data-act="sec-vamp" aria-pressed="${!!s.vamp}" title="Vamp: the scene loops until you launch the next one (V)">∞ Vamp</button>`;
+    <button class="ptog" data-act="sec-vamp" aria-pressed="${!!s.vamp}" data-tip="Vamp&#10;The scene loops until you launch the next one" data-tip-key="V">∞ Vamp</button>`;
+}
+
+// ---------- rich tooltips (tip.js calls richTip(kind, el) when one is about to show)
+const fmtSec = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+const tsw = (t) => ({ html: `<span class="tsw" style="--tc:var(--t-${t})"></span>${esc(TLABEL[t] || t)}` });
+const H = (html) => ({ html });
+
+function instText(p) {
+  const i = p.instrument || {};
+  if (i.type === 'analoglab') return `Analog Lab V · ${i.preset || '?'}`;
+  if (i.type === 'drumrack') return 'Drum Rack';
+  if (i.type === 'logic-builtin') return `Logic ${i.name || ''}${i.preset ? ' · ' + String(i.preset).replace(/\.\w+$/, '') : ''} (Logic-only)`;
+  if (i.type === 'audio' || p.kind === 'audio') return 'Audio track';
+  return i.name || i.type || p.kind || '?';
+}
+function stemText(p) {
+  if (p.stem) return H(`<span class="on-y">exported</span> <span class="mono">${esc(p.stem.split('/').pop())}</span>`);
+  if (p.raw_stem) return H(`<span class="warn">raw</span> (no FX) <span class="mono">${esc(p.raw_stem.split('/').pop())}</span>`);
+  return H(`<span class="bad">none</span>${p.midi ? ' · MIDI only' : ''}`);
+}
+function whoPlays(p, t) {
+  const a = asg(p.id);
+  if (LIVE.has(t)) {
+    const perf = a?.performer && bandPerf(a.performer);
+    return perf ? `${perf.name} · ${a.rig || '?'}` : H('<span class="bad">nobody yet (needs a player)</span>');
+  }
+  return LAPTOP.has(t) ? 'the laptop' : t === 'click' ? 'click track' : '—';
+}
+function previewText(p) {
+  if (!pvAudible(p)) return H(`<span class="on-n">${esc(pvWhyOff(p))}</span>`);
+  const sm = S.pv.mute.has(p.id) ? ' · muted' : S.pv.solo.size && !S.pv.solo.has(p.id) ? ' · not soloed' : S.pv.solo.has(p.id) ? ' · solo' : '';
+  return synthOf(p) ? H(`<span class="syn">synth preview</span> (MIDI notes on a browser synth)${sm}`) : 'stem' + sm;
+}
+
+function richTip(kind, el) {
+  if (!S.song && kind !== 'chip') return '';
+  const bp = bpb(), k = spb();
+  if (kind === 'sec') {
+    const s = secById(el.dataset.sid); if (!s) return '';
+    const i = S.song.sections.indexOf(s), bars = Math.round((s.end - s.start) / bp), ts = (S.song.time_signature || [4, 4]).join('/');
+    const cuesOn = !!(S.song.options || {}).cues;
+    const cue = i === 0 ? H('<span class="on-n">none · first section (the count-in covers it)</span>')
+      : H(`“${esc(s.cue || s.name)}”${s.cue ? '' : ' <span class="on-n">(section name)</span>'}${cuesOn ? '' : ' <span class="on-n">· cues off</span>'}`);
+    return tipHtml({
+      title: s.name, sub: `bars ${s.start / bp + 1}–${s.end / bp + 1} · ${fmtSec(s.start * k)}–${fmtSec(s.end * k)}`,
+      rows: [['Length', `${bars} bar${bars === 1 ? '' : 's'} · ${((s.end - s.start) * k).toFixed(1)} s`], ['Tempo', `${S.song.tempo} bpm · ${ts}`],
+        ['Cue', cue], ['Vamp', s.vamp ? H('<span class="on-y">on</span> · the scene loops until you launch the next') : 'off'],
+        S.pv.loop === s.id ? ['Preview', H('<span class="on-y">looping this section</span>')] : null],
+      keys: ['double-click to rename', 'drag edges', '⌥-click split', 'P play · L loop'],
+    });
+  }
+  if (kind === 'part') {
+    const p = partById(el.dataset.part); if (!p) return '';
+    const t = lineupT(p), ov = Object.entries(asg(p.id)?.sections || {});
+    const iss = S.issues.filter((x) => x.part === p.id);
+    const uniq = [...new Map(iss.map((x) => [x.message, x])).values()];
+    return tipHtml({
+      title: p.name, sub: `${p.id} · ${p.kind || '?'}${p.role_hint ? ' · ' + p.role_hint : ''}`,
+      rows: [['Instrument', instText(p)], [`In ${lineup().name}`, tsw(t)],
+        ov.length ? ['Overrides', ov.map(([sid, st]) => `${secById(sid)?.name || sid} → ${TLABEL[st] || st}`).join(', ')] : null,
+        ['Played by', whoPlays(p, t)], ['Stem', stemText(p)], ['Preview', previewText(p)]],
+      lines: uniq.slice(0, 3).map((x) => H(`<span class="${x.level === 'error' ? 'bad' : 'warn'}">${x.level === 'error' ? '●' : '▲'}</span> ${esc(x.message)}`)),
+      keys: el.classList.contains('card') ? ['drag onto a rig', '1–9 assign to zone', '0 playback'] : ['click highlight', 'right-click treatment', 'drop a chip: whole song'],
+    });
+  }
+  if (kind === 'cell') {
+    const p = partById(el.dataset.part), s = secById(el.dataset.sid); if (!p || !s) return '';
+    const t = effT(p, s.id), ovr = !!asg(p.id)?.sections?.[s.id], act = secActivity(p.id, s);
+    const a = S.activity?.parts?.[p.id];
+    let active;
+    if (act === null) active = H('<span class="on-n">unknown (no stem or MIDI to measure)</span>');
+    else {
+      const lo = Math.floor(s.start / bp), hi = Math.ceil(s.end / bp);
+      let n = 0; for (let b = lo; b < hi; b++) if (a.bars[b] > 0) n++;
+      active = act ? H(`<span class="on-y">yes</span> · sounds in ${n} of ${hi - lo} bars (${a.source === 'midi' ? 'MIDI notes' : 'stem level'})`) : H('<span class="on-n">no · silent here</span>');
+    }
+    const plays = S.pv.mode === 'full' || LAPTOP.has(t);
+    return tipHtml({
+      title: `${p.name} · ${s.name}`, sub: `bars ${s.start / bp + 1}–${s.end / bp + 1}`,
+      rows: [['Treatment', H(`${tsw(t).html}${ovr ? ' <span class="warn">override</span>' : ` <span class="on-n">from the lineup</span>`}`)],
+        ['Active', active], ['Preview', plays && pvAudible(p) ? (synthOf(p) ? H('<span class="syn">synth</span>') : 'stem') : H('<span class="on-n">not played by the laptop</span>')]],
+      keys: el.classList.contains('cell') ? ['drop a chip: this section', '⌥-click clear', 'right-click menu'] : [],
+    });
+  }
+  if (kind === 'chip') {
+    const t = el.dataset.t, p = el.dataset.part && S.song && partById(el.dataset.part);
+    const keys = el.dataset.palette ? ['drag onto a part: whole song', 'onto a cell: one section']
+      : p ? ['click to change', 'drag onto a cell: override one section'] : [];
+    return tipHtml({ title: TLABEL[t] || t, sub: p ? `${p.name} in “${lineup().name}”` : LIVE.has(t) ? 'live' : LAPTOP.has(t) ? 'from the laptop' : '',
+      lines: [TDESC[t]], keys });
+  }
+  return '';
 }
 
 // ---------- Lineup board
@@ -618,14 +792,14 @@ function boardPlacement() {
 function card(p) {
   const strip = S.song.sections.map((s) => {
     const act = secActivity(p.id, s), t = effT(p, s.id);
-    return `<i class="${act ? 'on' : ''}" style="--tc:var(--t-${t})" title="${esc(s.name)}: ${esc(TLABEL[t])}${act === null ? ' (unknown)' : act ? '' : ' (silent)'}"></i>`;
+    return `<i class="${act ? 'on' : ''}" style="--tc:var(--t-${t})" data-tip-rich="cell" data-part="${esc(p.id)}" data-sid="${esc(s.id)}"></i>`;
   }).join('');
   const t = lineupT(p), hl = S.highlight?.part === p.id;
   return `<div class="card ${hl ? 'hl' : ''}" draggable="true" tabindex="0" data-part="${esc(p.id)}" data-dragpart="${esc(p.id)}"
-     title="${esc(p.name)} — drag onto a rig, or focus and press a zone number">
+     data-tip-rich="part" data-tip-pos="right">
     <div class="c1"><span class="issue-dot"></span><span class="cname">${esc(p.name)}</span>
-    ${chip(t, `data-act="tmenu" data-part="${esc(p.id)}" title="Change treatment"`, 'mini')}</div>
-    <div class="c2">${instBadge(p)}<div class="strip" title="activity per section">${strip}</div></div></div>`;
+    ${chip(t, `data-act="tmenu" data-part="${esc(p.id)}"`, 'mini')}</div>
+    <div class="c2">${instBadge(p)}<div class="strip">${strip}</div></div></div>`;
 }
 
 VIEWS.lineup = {
@@ -657,7 +831,7 @@ VIEWS.lineup = {
         <div class="zone-h"><span class="chip mini ${t === 'dropped' ? 'dropped' : ''}" style="--tc:var(--t-${t})">${label}</span><span class="io">${list.length}</span></div>
         ${list.map(card).join('') || '<div class="empty">drop parts here</div>'}</div>`;
     }
-    let html = `<section class="col playback"><div class="col-h"><b>Playback</b><span class="roles">from the laptop</span><kbd class="x" title="Focus a card and press 0">0</kbd></div><div class="col-b">${pb}</div></section>`;
+    let html = `<section class="col playback"><div class="col-h"><b>Playback</b><span class="roles">from the laptop</span><kbd class="x" data-tip="Focus a card and press 0">0</kbd></div><div class="col-b">${pb}</div></section>`;
     for (const pid of pl.cols) {
       const p = bandPerf(pid);
       const rigs = (p.rigs || []).map((r) => {
@@ -666,11 +840,11 @@ VIEWS.lineup = {
           ? `in ${Array.isArray(r.audio_input) ? r.audio_input.join('/') : r.audio_input ?? '?'}`
           : `${r.midi_port || 'all ins'} · ch ${r.midi_channel ?? 'all'}`;
         return `<div class="zone" data-drop="rig" data-perf="${esc(pid)}" data-rig="${esc(r.id)}" data-zone="${n + 1}">
-          <div class="zone-h">${zoneNo()}<span class="rig-ic">${RIG_ICON[r.kind] || '?'}</span><span class="k">${esc(r.kind)}</span><span class="ctl" title="${esc(r.controller || r.id)}">${esc(r.controller || r.id)}</span><span class="io">${esc(io)}</span></div>
+          <div class="zone-h">${zoneNo()}<span class="rig-ic">${RIG_ICON[r.kind] || '?'}</span><span class="k">${esc(r.kind)}</span><span class="ctl" data-tip="${esc(r.controller || r.id)}">${esc(r.controller || r.id)}</span><span class="io">${esc(io)}</span></div>
           ${list.map(card).join('') || `<div class="empty">drop to play live (${esc(TLABEL[rigTreatment(r.kind)])})</div>`}</div>`;
       }).join('');
       html += `<section class="col"><div class="col-h"><b>${esc(p.name)}</b><span class="roles">${esc((p.roles || []).join(' · '))}</span>
-        <button class="btn icon x" data-act="ptoggle" data-perf="${esc(pid)}" title="Remove from this lineup (their parts go to playback)">×</button></div>
+        <button class="btn icon x" data-act="ptoggle" data-perf="${esc(pid)}" data-tip="Remove from this lineup&#10;Their parts go back to playback" aria-label="Remove ${esc(p.name)} from this lineup">×</button></div>
         <div class="col-b">${rigs || '<div class="empty">No rigs — add one on the Band tab</div>'}</div></section>`;
     }
     const absent = (S.band?.performers || []).filter((p) => !pl.cols.includes(p.id));
@@ -914,15 +1088,15 @@ VIEWS.setlists = {
     const rows = sl.songs.map((e, i) => {
       const info = songInfo(e.song), lus = info?.lineups || [];
       const lid = e.lineup || 'default';
-      return `<div class="sl-row" draggable="true" tabindex="0" data-i="${i}" data-slrow="${i}" title="Drag to reorder · ⌥↑/⌥↓ to move">
+      return `<div class="sl-row" draggable="true" tabindex="0" data-i="${i}" data-slrow="${i}" data-tip="Drag to reorder" data-tip-key="⌥↑ ⌥↓">
         <span class="grip" aria-hidden="true">⋮⋮</span><span class="num">${String(i + 1).padStart(2, '0')}</span>
         <select class="inp" data-sl="song" data-i="${i}" aria-label="Song">${S.songs.map((s) => `<option value="${esc(s.slug)}" ${s.slug === e.song ? 'selected' : ''}>${esc(s.title)}</option>`).join('')}${info ? '' : `<option selected>${esc(e.song)} (missing)</option>`}</select>
         <select class="inp" data-sl="lineup" data-i="${i}" aria-label="Lineup">${(lus.includes(lid) ? lus : [lid, ...lus]).map((l) => `<option value="${esc(l)}" ${l === lid ? 'selected' : ''}>${esc(info?.lineup_names?.[l] || l)}${lus.includes(l) ? '' : ' (missing)'}</option>`).join('')}</select>
         <input class="inp grow" data-sl="notes" data-i="${i}" value="${esc(e.notes || '')}" placeholder="notes for the running order" aria-label="Notes">
         <span class="sl-tempo">${info?.tempo ? info.tempo + ' bpm' : ''}</span>
-        <button class="btn icon small" data-act="sl-up" data-i="${i}" title="Move up (⌥↑)" ${i ? '' : 'disabled'}>↑</button>
-        <button class="btn icon small" data-act="sl-down" data-i="${i}" title="Move down (⌥↓)" ${i < sl.songs.length - 1 ? '' : 'disabled'}>↓</button>
-        <button class="btn icon small danger" data-act="sl-del" data-i="${i}" title="Remove from setlist">×</button></div>`;
+        <button class="btn icon small" data-act="sl-up" data-i="${i}" data-tip="Move up" data-tip-key="⌥↑" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button>
+        <button class="btn icon small" data-act="sl-down" data-i="${i}" data-tip="Move down" data-tip-key="⌥↓" aria-label="Move down" ${i < sl.songs.length - 1 ? '' : 'disabled'}>↓</button>
+        <button class="btn icon small danger" data-act="sl-del" data-i="${i}" data-tip="Remove from setlist" aria-label="Remove from setlist">×</button></div>`;
     }).join('');
     const avail = S.songs;
     const r = S.slResult && S.slJob?.key === S.slSlug ? S.slResult : null;
@@ -932,8 +1106,8 @@ VIEWS.setlists = {
         <span class="hint mono">setlists/${esc(S.slSlug)}.json</span>
         <span class="spacer" style="flex:1"></span>
         <button class="btn" id="sl-save" data-act="sl-save" ${slDirty() ? '' : 'disabled'}>Save</button>
-        <button class="btn primary" data-act="sl-build" ${running || !sl.songs.length ? 'disabled' : ''} title="Build every song's Live set in show order + running order + phone fallback">${running ? 'Building…' : 'Build show'}</button>
-        <button class="btn danger" data-act="sl-delete" title="Delete setlist">Delete</button>
+        <button class="btn primary" data-act="sl-build" ${running || !sl.songs.length ? 'disabled' : ''} data-tip="Build every song's Live set in show order + running order + phone fallback">${running ? 'Building…' : 'Build show'}</button>
+        <button class="btn danger" data-act="sl-delete" data-tip="Delete setlist">Delete</button>
       </div>
       <div class="sl-rows" id="sl-rows">${rows || '<div class="panel-note">No songs yet: add one below.</div>'}</div>
       <div class="frow"><select class="inp" id="sl-add" aria-label="Add song"><option value="">+ Add song…</option>${avail.map((s) => `<option value="${esc(s.slug)}">${esc(s.title)}</option>`).join('')}</select>
@@ -982,7 +1156,7 @@ VIEWS.band = {
     const ioRows = (kind) => Object.entries(itf[kind]).map(([k, v]) => `
       <div class="frow"><input class="inp mono" style="width:120px" data-iokey="${kind}" data-key="${esc(k)}" value="${esc(k)}" aria-label="${kind} name">
       <input class="inp mono" style="width:90px" data-ioval="${kind}" data-key="${esc(k)}" value="${esc(ioText(v))}" placeholder="${kind === 'outputs' ? '1,2' : '1'}" aria-label="${kind} channels">
-      <button class="btn icon small danger" data-act="del-io" data-io="${kind}" data-key="${esc(k)}" title="Remove">×</button></div>`).join('');
+      <button class="btn icon small danger" data-act="del-io" data-io="${kind}" data-key="${esc(k)}" data-tip="Remove" aria-label="Remove">×</button></div>`).join('');
     const perf = (p, pi) => `
       <div class="fcard">
         <h3><input class="inp" style="flex:1;font-weight:600" data-bp="performers.${pi}.name" value="${esc(p.name)}" aria-label="Name">
@@ -999,7 +1173,7 @@ VIEWS.band = {
           <td><input class="inp" data-bp="performers.${pi}.rigs.${ri}.midi_port" data-type="null" value="${esc(r.midi_port ?? '')}" placeholder="all ins"></td>
           <td><input class="inp mono" style="width:44px" data-bp="performers.${pi}.rigs.${ri}.midi_channel" data-type="ch" value="${esc(r.midi_channel ?? '')}" placeholder="all"></td>
           <td><input class="inp mono" style="width:56px" data-bp="performers.${pi}.rigs.${ri}.audio_input" data-type="io" value="${esc(ioText(r.audio_input))}" placeholder="—"></td>
-          <td><button class="btn icon small danger" data-act="del-rig" data-pi="${pi}" data-ri="${ri}" title="Remove rig">×</button></td></tr>`).join('')}
+          <td><button class="btn icon small danger" data-act="del-rig" data-pi="${pi}" data-ri="${ri}" data-tip="Remove rig" aria-label="Remove rig">×</button></td></tr>`).join('')}
         </tbody></table>
         <div><button class="btn small" data-act="add-rig" data-pi="${pi}">+ Rig</button></div>
       </div>`;
@@ -1092,6 +1266,7 @@ function openMenu(x, y, items) {
     if (it.header) return `<div class="mh">${esc(it.header)}</div>`;
     return `<button class="mi ${it.cur ? 'cur' : ''}" data-mi="${i}" ${it.disabled ? 'disabled' : ''}>${it.color ? `<span class="sw" style="--tc:${it.color}"></span>` : ''}${esc(it.label)}${it.key ? `<span class="k">${esc(it.key)}</span>` : ''}</button>`;
   }).join('');
+  TIP?.hide();
   m.hidden = false;
   const r = m.getBoundingClientRect();
   m.style.left = clamp(x, 4, innerWidth - r.width - 4) + 'px';
@@ -1112,6 +1287,7 @@ function menuAt(el, items) { const r = el.getBoundingClientRect(); openMenu(r.le
 
 function openDialog(html, cls = '') {
   const d = $('#dlg');
+  TIP?.hide();
   d.className = cls; d.innerHTML = html; d.returnValue = '';
   if (!d.open) d.showModal();
   return d;
@@ -1283,7 +1459,11 @@ function onAct(act, el, ev) {
     case 'add-io': bandEdit(() => { const o = S.band.interface[el.dataset.io]; let k = 'new', n = 2; while (k in o) k = `new-${n++}`; o[k] = el.dataset.io === 'outputs' ? [] : null; }); break;
     case 'del-io': bandEdit(() => { delete S.band.interface[el.dataset.io][el.dataset.key]; }); break;
     // song options + section inspector
-    case 'opt': mutate(() => { const o = (S.song.options ||= {}); o[el.dataset.opt] = !o[el.dataset.opt]; }); break;
+    case 'opt': {
+      mutate(() => { const o = (S.song.options ||= {}); o[el.dataset.opt] = !o[el.dataset.opt]; });
+      if (el.dataset.opt === 'cues') pvSetCues(!!S.song.options.cues);
+      break;
+    }
     case 'sec-vamp': if (secById(S.selSec)) mutate(() => { const s = secById(S.selSec); s.vamp = !s.vamp; }); break;
     // preview
     case 'pv-toggle': pvToggle(); break;
@@ -1292,6 +1472,7 @@ function onAct(act, el, ev) {
     case 'pv-zero': PV.seek(0); if (PV.playing) pvPlay(0); else { drawPlayhead(); updateClock(); } break;
     case 'pv-mode': S.pv.mode = el.dataset.mode; pref.set('pv.mode', S.pv.mode); if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
     case 'pv-click': S.pv.click = !S.pv.click; pref.set('pv.click', S.pv.click); PV.setClick(S.pv.click); renderTransport(); break;
+    case 'pv-cues': pvSetCues(!S.pv.cues); break;
     case 'pv-clear': S.pv.solo.clear(); S.pv.mute.clear(); if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
     case 'solo': pvSoloMute('solo', pid); break;
     case 'mute': pvSoloMute('mute', pid); break;
@@ -1446,6 +1627,7 @@ function dropTypes(ev) { return ev.dataTransfer?.types || []; }
 
 function wire() {
   const main = $('#main');
+  TIP = initTips(richTip);
 
   document.addEventListener('click', (ev) => {
     const mi = ev.target.closest('.mi');
@@ -1500,6 +1682,7 @@ function wire() {
     const t = ev.target;
     if (t.id === 'zoom') { S.zoom = +t.value; VIEWS.arrange.fill(); return; }
     if (t.id === 'pv-vol') { S.pv.vol = +t.value; pref.set('pv.vol', S.pv.vol); PV.setVolume(S.pv.vol); return; }
+    if (t.id === 'pv-cvol') { S.pv.cuesVol = +t.value; pref.set('pv.cuesVol', S.pv.cuesVol); PV.setGains(pvGain); return; }
     if (t.dataset.imp) {
       const I = S.imp; I[t.dataset.imp] = t.value;
       if (t.dataset.imp === 'slug') { I.slugTouched = !!t.value; I.slug = t.value.trim(); }
@@ -1731,6 +1914,6 @@ function onKey(ev) {
   else if (k === 'l') pvLoop(S.selSec);
 }
 
-window.lls = { S, PV };  // console debugging handle
+window.lls = { S, PV, get TIP() { return TIP; } };  // console debugging handle
 wire();
 init();

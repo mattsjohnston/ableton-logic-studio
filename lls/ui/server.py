@@ -16,6 +16,11 @@ API (all JSON):
   PUT  /api/band                          <- band.json
   POST /api/open-in-live                  <- {als}  (opens a built set in Live; explicit click only)
   GET  /api/songs/<slug>/stem/<part|_mix>[?pcm16=1]  -> WAV with HTTP Range; pcm16 = 16-bit copy cached in stems/preview/
+  GET  /api/songs/<slug>/midi/<part>      -> {notes: [[pitch, start_beat, dur_beats, vel], ...]}  (browser synth preview)
+  GET  /api/songs/<slug>/cues.wav[?h=HASH]-> spoken section cues (lls.build.cues_wav), 16-bit mono, HTTP Range; cached as
+                                             stems/preview/cues-<hash>.wav (hash: tempo, sections, voice settings). With ?h=
+                                             it only serves an already-rendered file.
+  POST /api/songs/<slug>/cues.wav         <- {song?} (unsaved edits) -> {hash, url, cues: [[section_id, start_s, end_s]]}
   POST /api/pick                          <- {kind: logicx|folder} -> {path} | {cancelled: true}  (native macOS dialog)
   POST /api/import                        <- {logicx?, slug, export_dir?} -> {job}  (APFS clone -> ingest -> link-stems)
   GET  /api/jobs/<id>?since=N             -> {state, step, lines (from N), next, result, error}
@@ -26,7 +31,7 @@ API (all JSON):
   POST /api/reveal                        <- {path}  (open -R; only paths under the root)
 validate/suggest/build need lls.lineup; without it they answer 501.
 """
-import importlib, inspect, itertools, json, os, re, shutil, subprocess, sys, tempfile, threading, time, traceback, wave
+import hashlib, importlib, inspect, itertools, json, os, re, shutil, subprocess, sys, tempfile, threading, time, traceback, wave
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
@@ -339,6 +344,11 @@ def pcm16_preview(song_dir, src, rel):
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", rel.replace("/", "__"))
     dst = os.path.join(song_dir, "stems", "preview", os.path.splitext(name)[0] + ".wav")
     if os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src): return dst
+    return _write_pcm16(src, dst)
+
+
+def _write_pcm16(src, dst, mono=False):
+    """WAV (8/16/24/32-bit int) -> 16-bit WAV at dst (atomic). mono=True averages the channels."""
     import numpy as np
     with wave.open(src) as w:
         ch, sw, sr, n = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
@@ -351,12 +361,75 @@ def pcm16_preview(song_dir, src, rel):
     elif sw == 2: pcm = np.frombuffer(raw, "<i2")
     elif sw == 1: pcm = ((np.frombuffer(raw, np.uint8).astype(np.int16) - 128) << 8).astype("<i2")
     else: raise ApiError(415, f"unsupported sample width {sw}")
+    if mono and ch > 1:
+        pcm = pcm[: (len(pcm) // ch) * ch].reshape(-1, ch).astype(np.int32).mean(axis=1).astype("<i2"); ch = 1
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     tmp = dst + ".tmp"
     with wave.open(tmp, "wb") as w:
         w.setnchannels(ch); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm.tobytes())
     os.replace(tmp, dst)
     return dst
+
+
+CUES_SR = 22050      # speech only: a quarter of the bytes of 44.1k stereo
+CUES_KEEP = 4        # rendered cue files kept per song (undo/redo flips between recent versions)
+_cue_locks, _cue_locks_lock = {}, threading.Lock()
+_spoken, _spoken_lock = {}, threading.Lock()   # (speak fn, voice settings, sr, text) -> audio: an edit re-speaks only what changed
+
+
+def _speak_all(B, texts, sr):
+    """Speak the unique cue texts in parallel (`say` is ~1 s each) and memoise them. Returns a speak(text, sr) for cues_wav."""
+    fn = B._speak
+    key = lambda t: (id(fn), tuple(B.CUE_VOICES), B.CUE_RATE, sr, t)
+    with _spoken_lock: todo = [t for t in dict.fromkeys(texts) if key(t) not in _spoken]
+    if todo:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(todo))) as ex:
+            for t, audio in zip(todo, ex.map(lambda t: fn(t, sr), todo)):
+                with _spoken_lock:
+                    if len(_spoken) > 512: _spoken.clear()
+                    _spoken[key(t)] = audio
+    with _spoken_lock: got = {t: _spoken[key(t)] for t in texts}
+    return lambda text, _sr: got[text]
+
+
+def cues_hash(song):
+    """What the rendered cues depend on: timing, section names/starts/cue text, and the voice settings."""
+    from lls import build as B
+    ts = song.get("time_signature") or [4, 4]
+    key = {"v": 1, "tempo": song["tempo"], "ts": ts, "sr": CUES_SR,
+           "len": song.get("length_beats") or max([s["end"] for s in song["sections"]] + [0]),
+           "sections": [[s["name"], s["start"], B.cue_text(s)] for s in song["sections"]],
+           "voices": list(B.CUE_VOICES), "rate": B.CUE_RATE, "gain": B.CUE_GAIN}
+    return hashlib.sha1(json.dumps(key, sort_keys=True).encode()).hexdigest()[:12]
+
+
+def cues_preview(song_dir, song):
+    """Render (or reuse) stems/preview/cues-<hash>.wav for this song. Returns (path, hash, placed)."""
+    from lls import build as B
+    h = cues_hash(song)
+    pdir = os.path.join(song_dir, "stems", "preview")
+    dst = os.path.join(pdir, f"cues-{h}.wav")
+    with _cue_locks_lock: lock = _cue_locks.setdefault(dst, threading.Lock())
+    with lock:
+        if os.path.isfile(dst): return dst, h, None
+        s = dict(song, sample_rate=CUES_SR, time_signature=song.get("time_signature") or [4, 4])
+        if not s.get("length_beats"): s["length_beats"] = max([x["end"] for x in song["sections"]] + [0])
+        os.makedirs(pdir, exist_ok=True)
+        tmp = os.path.join(pdir, f".cues-{h}-24.wav")
+        try:
+            bpb = s["time_signature"][0] * 4 / s["time_signature"][1]
+            texts = [B.cue_text(x) for x in s["sections"] if x["start"] - bpb >= 0]   # as cues_wav: none before bar 2
+            placed = B.cues_wav(tmp, s, speak=_speak_all(B, texts, CUES_SR))
+            _write_pcm16(tmp, dst, mono=True)
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+        old = sorted((f for f in os.listdir(pdir) if f.startswith("cues-") and f.endswith(".wav") and f != os.path.basename(dst)),
+                     key=lambda f: os.path.getmtime(os.path.join(pdir, f)), reverse=True)
+        for f in old[CUES_KEEP - 1:]:
+            try: os.unlink(os.path.join(pdir, f))
+            except OSError: pass
+        return dst, h, placed
 
 
 def parse_range(header, size):
@@ -518,6 +591,10 @@ class Handler(BaseHTTPRequestHandler):
                 return getattr(self, "api_" + seg[2])(d, sp, self.body())
             if len(seg) == 4 and method in ("GET", "HEAD") and seg[2] == "stem":
                 return self.api_stem(d, read_json(sp), seg[3])
+            if len(seg) == 4 and method == "GET" and seg[2] == "midi":
+                return self.api_midi(d, read_json(sp), seg[3])
+            if len(seg) == 3 and seg[2] == "cues.wav" and method in ("GET", "HEAD", "POST"):
+                return self.api_cues(d, sp, method)
         if seg == ["jobs"] and method == "GET":
             return self.send_json(200, [j.view(len(j.lines)) for j in self.jobs.all.values()])
         if seg[:1] == ["jobs"] and len(seg) == 2 and method == "GET":
@@ -638,6 +715,38 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isfile(full): raise ApiError(404, f"{pid}: stem file missing ({rel}); run link-stems")
         if self.query.get("pcm16") and full.lower().endswith(".wav"): full = pcm16_preview(d, full, rel)
         return self.send_file(full, ranged=True)
+
+    def api_midi(self, d, song, pid):
+        part = next((p for p in song.get("parts", []) if p.get("id") == pid), None)
+        if part is None: raise ApiError(404, f"no part {pid!r}")
+        rel = part.get("midi")
+        if not isinstance(rel, str) or not rel: raise ApiError(404, f"{pid}: no MIDI")
+        rel = os.path.normpath(rel)
+        if os.path.isabs(rel) or rel.startswith(".."): raise ApiError(403, "midi path must stay inside the song folder")
+        full = os.path.join(d, rel)
+        if not os.path.isfile(full): raise ApiError(404, f"{pid}: MIDI file missing ({rel})")
+        notes = read_json(full).get("notes", [])
+        return self.send_json(200, {"part": pid, "notes": notes})
+
+    def api_cues(self, d, sp, method):
+        if method == "POST":
+            body = self.body()
+            song = body.get("song") or read_json(sp)
+            if body.get("song") is not None: check_song(song)
+            if not song.get("sections"): raise ApiError(400, "song has no sections")
+            path, h, placed = cues_preview(d, song)
+            return self.send_json(200, {"hash": h, "url": f"/api/songs/{os.path.basename(d)}/cues.wav?h={h}",
+                                        "cues": None if placed is None else [[song["sections"][i]["id"], a, b] for i, a, b in placed]})
+        h = self.query.get("h")
+        if h is not None:
+            if not re.fullmatch(r"[0-9a-f]{12}", h): raise ApiError(400, "bad cue hash")
+            path = os.path.join(d, "stems", "preview", f"cues-{h}.wav")
+            if not os.path.isfile(path): raise ApiError(404, "cues not rendered (POST first)")
+        else:
+            song = read_json(sp)
+            if not song.get("sections"): raise ApiError(400, "song has no sections")
+            path = cues_preview(d, song)[0]
+        return self.send_file(path, "audio/wav", ranged=True)
 
     # ---- native pickers / Finder ----
     def _osascript(self, script):

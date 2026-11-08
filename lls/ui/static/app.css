@@ -388,3 +388,36 @@ a.btn { text-decoration: none; }
 .split2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .split2 ul { margin: 0; padding-left: 18px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
 .dlg-h .tabs button { font-size: 11px; }
+
+/* ---------- tooltips (tip.js) ---------- */
+.tip { position: fixed; z-index: 80; left: 0; top: 0; max-width: 320px; pointer-events: none; padding: 6px 9px 7px; border-radius: 6px;
+  background: color-mix(in srgb, var(--panel2) 94%, transparent); box-shadow: var(--shadow); border-top: 1px solid color-mix(in srgb, var(--accent2) 55%, transparent);
+  font-size: 11px; line-height: 1.4; color: var(--text); opacity: 0; transform: translateY(2px); transition: opacity .08s ease-out, transform .08s ease-out;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); overflow-wrap: anywhere; }
+.tip[data-side=below] { transform: translateY(-2px); }
+.tip.in { opacity: 1; transform: none; }
+.tip-t { font-weight: 650; font-size: 12px; display: flex; align-items: baseline; gap: 6px; }
+.tip-t kbd { margin-left: auto; padding-left: 4px; color: var(--muted); }
+.tip-t.err { color: var(--err); } .tip-t.warn { color: var(--warn); }
+.tip-s { color: var(--muted); font: 10px var(--mono); margin-top: 1px; }
+.tip-d { color: var(--muted); margin-top: 2px; }
+.tip-d b { color: var(--text); font-weight: 600; }
+.tip-rows { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; margin-top: 5px; }
+.tip-rows > span { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; line-height: 16px; }
+.tip-rows > b { font-weight: 500; font-size: 11px; line-height: 16px; min-width: 0; }
+.tip-rows .mono { font: 10.5px var(--mono); }
+.tip-rows .tsw { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--tc); box-shadow: 0 0 5px var(--tc); margin-right: 5px; vertical-align: 1px; }
+.tip-k { margin-top: 5px; padding-top: 4px; border-top: 1px solid var(--line); color: var(--faint); font: 10px var(--mono); }
+.tip .warn { color: var(--warn); } .tip .on-y { color: var(--ok); } .tip .on-n { color: var(--faint); } .tip .bad { color: var(--err); } .tip .syn { color: var(--accent3); }
+@media (prefers-reduced-motion: reduce) { .tip { transition: none; transform: none; } }
+
+/* synth preview / cues */
+.pv-syn { display: inline-flex; align-items: center; height: 14px; padding: 0 4px; border-radius: 3px; font: 600 9px var(--mono); letter-spacing: .04em;
+  color: var(--accent3); border: 1px solid color-mix(in srgb, var(--accent3) 45%, transparent); background: color-mix(in srgb, var(--accent3) 10%, transparent); white-space: nowrap; flex: none; }
+.ph .pmeta .prow2 { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.ph .pmeta .prow2 .badge { min-width: 0; }
+.pv-syn-i { color: var(--faint); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pv-cues { display: inline-flex; align-items: center; gap: 4px; }
+.pv-cues input[type=range] { width: 60px; }
+.ptog.stale { border-style: dashed; }
+.pv-status .syn { color: var(--accent3); }

@@ -229,6 +229,72 @@ class UiServer(unittest.TestCase):
         s = server.read_json(sp); s["parts"][0]["stem"] = "../../band.json"; server.write_json_atomic(sp, s)
         self.assertEqual(self.get_raw("/api/songs/range-song/stem/pad")[0], 403)
 
+    # --- spoken cues for the preview (lls.build.cues_wav, `say` faked)
+    def test_cues_endpoint_caches_and_invalidates(self):
+        import lls.build
+        d, song = make_song(self.tmp, "cue-song", "Cue Song")
+        spoken = []
+
+        def fake_speak(text, sr):
+            spoken.append((text, sr))
+            t = np.arange(int(0.2 * sr)) / sr
+            x = (np.sin(2 * np.pi * 440 * t) * 0.5).astype(np.float32)
+            return np.stack([x, x], axis=1)
+
+        with mock.patch.object(lls.build, "_speak", fake_speak):
+            # GET without a hash renders from song.json on disk
+            st, h, full = self.get_raw("/api/songs/cue-song/cues.wav")
+            self.assertEqual(st, 200); self.assertEqual(h["Content-Type"], "audio/wav"); self.assertEqual(h["Accept-Ranges"], "bytes")
+            self.assertEqual(spoken, [("Chorus", server.CUES_SR)])   # first section: no cue (count-in)
+            with wave.open(io.BytesIO(full)) as w:
+                self.assertEqual((w.getnchannels(), w.getsampwidth(), w.getframerate()), (1, 2, server.CUES_SR))
+                a = np.frombuffer(w.readframes(w.getnframes()), "<i2")
+            k = int(4 * 0.5 * server.CUES_SR)   # one bar (4 beats at 120 bpm) before the Chorus at beat 8
+            self.assertEqual(int(np.abs(a[:k - 10]).max()), 0); self.assertGreater(int(np.abs(a[k:k + 2000]).max()), 1000)
+            pdir = os.path.join(d, "stems", "preview")
+            self.assertEqual(len([f for f in os.listdir(pdir) if f.startswith("cues-")]), 1)
+            # Range on the cached file; no re-render
+            st, h, part = self.get_raw("/api/songs/cue-song/cues.wav", {"Range": "bytes=0-43"})
+            self.assertEqual((st, part), (206, full[:44])); self.assertEqual(h["Content-Range"], f"bytes 0-43/{len(full)}")
+            self.assertEqual(len(spoken), 1)
+            # POST the same song -> same hash, still cached
+            st, r = self.req("POST", "/api/songs/cue-song/cues.wav", {})
+            self.assertEqual(st, 200); self.assertEqual(len(spoken), 1); h1 = r["hash"]
+            self.assertEqual(r["url"], f"/api/songs/cue-song/cues.wav?h={h1}")
+            st, _, again = self.get_raw(r["url"])
+            self.assertEqual((st, again), (200, full))
+            # unsaved edit (cue text) -> new hash, re-rendered with the new text
+            edited = json.loads(json.dumps(song)); edited["sections"][1]["cue"] = "Big chorus"
+            st, r2 = self.req("POST", "/api/songs/cue-song/cues.wav", {"song": edited})
+            self.assertEqual(st, 200); self.assertNotEqual(r2["hash"], h1); self.assertEqual(spoken[-1][0], "Big chorus")
+            self.assertEqual(r2["cues"][0][0], "s2")
+            st, h, part = self.get_raw(r2["url"], {"Range": "bytes=-10"})
+            self.assertEqual(st, 206)
+            # tempo and section moves invalidate too; renames do
+            for change in (lambda s: s.__setitem__("tempo", 100.0), lambda s: s["sections"][1].__setitem__("name", "Hook")):
+                e = json.loads(json.dumps(song)); change(e)
+                self.assertNotIn(server.cues_hash(e), (h1, r2["hash"]))
+            # voice settings are in the hash
+            with mock.patch.object(lls.build, "CUE_RATE", 180):
+                self.assertNotEqual(server.cues_hash(song), h1)
+            # old renders are pruned to CUES_KEEP
+            for i in range(server.CUES_KEEP + 2):
+                e = json.loads(json.dumps(song)); e["sections"][1]["cue"] = f"take {i}"
+                self.assertEqual(self.req("POST", "/api/songs/cue-song/cues.wav", {"song": e})[0], 200)
+            self.assertEqual(len([f for f in os.listdir(pdir) if f.startswith("cues-")]), server.CUES_KEEP)
+            self.assertFalse([f for f in os.listdir(pdir) if f.startswith(".cues-")])   # no temp files left
+        self.assertEqual(self.get_raw(f"/api/songs/cue-song/cues.wav?h={'0' * 12}")[0], 404)
+        self.assertEqual(self.get_raw("/api/songs/cue-song/cues.wav?h=../../x")[0], 400)
+        bad = json.loads(json.dumps(song)); bad["tempo"] = -1
+        self.assertEqual(self.req("POST", "/api/songs/cue-song/cues.wav", {"song": bad})[0], 400)
+
+    def test_midi_notes_endpoint(self):
+        make_song(self.tmp, "midi-song", "Midi Song")
+        st, r = self.req("GET", "/api/songs/midi-song/midi/bass")
+        self.assertEqual(st, 200); self.assertEqual(r["notes"], [[60, 0.0, 1.0, 100], [64, 8.0, 1.0, 100]])
+        self.assertEqual(self.req("GET", "/api/songs/midi-song/midi/pad")[0], 404)    # audio part: no MIDI
+        self.assertEqual(self.req("GET", "/api/songs/midi-song/midi/nope")[0], 404)
+
     # --- import job
     def test_import_job_with_fake_ingest(self):
         src_dir = tempfile.mkdtemp(prefix="lls-orig-"); self.addCleanup(shutil.rmtree, src_dir, True)

@@ -9,27 +9,27 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand" title="Logic → Live band sets"><span class="sun"></span><b>LLS</b><span class="brand-sub">band sets</span></div>
+  <div class="brand" data-tip="Logic → Live band sets&#10;Builds Ableton Live sets for a band from Logic projects" data-tip-pos="below"><span class="sun"></span><b>LLS</b><span class="brand-sub">band sets</span></div>
   <select id="song-select" class="sel" aria-label="Song"></select>
   <nav class="tabs" role="tablist">
-    <button role="tab" data-view="arrange" title="Arrange (1)">Arrange<kbd>1</kbd></button>
-    <button role="tab" data-view="lineup" title="Lineup board (2)">Lineup<kbd>2</kbd></button>
-    <button role="tab" data-view="band" title="Band (3)">Band<kbd>3</kbd></button>
-    <button role="tab" data-view="setlists" title="Setlists: order songs, build the show (4)">Setlists<kbd>4</kbd></button>
+    <button role="tab" data-view="arrange" data-tip="Arrange&#10;Sections, treatments per part, preview playback" data-tip-key="1" data-tip-pos="below">Arrange<kbd>1</kbd></button>
+    <button role="tab" data-view="lineup" data-tip="Lineup board&#10;Who plays which part live; the rest comes from the laptop" data-tip-key="2" data-tip-pos="below">Lineup<kbd>2</kbd></button>
+    <button role="tab" data-view="band" data-tip="Band&#10;Performers, their rigs and the audio interface (band.json)" data-tip-key="3" data-tip-pos="below">Band<kbd>3</kbd></button>
+    <button role="tab" data-view="setlists" data-tip="Setlists&#10;Order songs and build the whole show" data-tip-key="4" data-tip-pos="below">Setlists<kbd>4</kbd></button>
   </nav>
   <div class="lineup-picker">
     <span class="lbl">Lineup</span>
     <select id="lineup-select" class="sel" aria-label="Lineup"></select>
-    <button id="lineup-menu" class="btn icon" title="Lineup actions" aria-label="Lineup actions">⋯</button>
+    <button id="lineup-menu" class="btn icon" data-tip="Lineup actions&#10;New, duplicate, rename, delete, suggest" data-tip-pos="below" aria-label="Lineup actions">⋯</button>
   </div>
   <div class="spacer"></div>
   <span id="save-state" class="save-state"></span>
-  <button id="undo" class="btn icon" title="Undo (⌘Z)" aria-label="Undo">↺</button>
-  <button id="redo" class="btn icon" title="Redo (⇧⌘Z)" aria-label="Redo">↻</button>
-  <button id="save" class="btn" title="Save (⌘S)">Save</button>
-  <button id="build" class="btn primary" title="Build Live set (⌘B)">Build</button>
-  <button id="theme" class="btn icon" title="Toggle light/dark" aria-label="Toggle theme">◐</button>
-  <button id="help" class="btn icon" title="How it works + shortcuts (?)" aria-label="How it works">?</button>
+  <button id="undo" class="btn icon" data-tip="Undo" data-tip-key="⌘Z" data-tip-pos="below" aria-label="Undo">↺</button>
+  <button id="redo" class="btn icon" data-tip="Redo" data-tip-key="⇧⌘Z" data-tip-pos="below" aria-label="Redo">↻</button>
+  <button id="save" class="btn" data-tip="Save&#10;Writes song.json (keeps song.json.bak) and band.json" data-tip-key="⌘S" data-tip-pos="below">Save</button>
+  <button id="build" class="btn primary" data-tip="Build Live set&#10;Saves, then generates the .als for the current lineup" data-tip-key="⌘B" data-tip-pos="below">Build</button>
+  <button id="theme" class="btn icon" data-tip="Light / dark theme" data-tip-pos="below" aria-label="Toggle theme">◐</button>
+  <button id="help" class="btn icon" data-tip="How it works + shortcuts" data-tip-key="?" data-tip-pos="below" aria-label="How it works">?</button>
 </header>
 <div class="body">
   <main id="main" tabindex="-1"></main>

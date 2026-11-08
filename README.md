@@ -17,7 +17,7 @@ Turns Logic Pro songs into Ableton Live Session sets for a 1–6 person synthwav
 3. `python -m lls link-stems songs/<slug> <export folder>` attaches the exported stems. Duplicate export names are resolved by audio activity.
 4. `python -m lls ui` (Orca quick command **Dev**) opens http://127.0.0.1:8765. The whole workflow runs from the browser (the **?** button explains it). There you:
    - import a song (song picker → **+ New song**, or **↻ Re-import / Link stems**): the UI clones the `.logicx` into `samples/<slug>.logicx` (APFS copy), ingests the copy and links the export folder, then shows the parts, the link report and the accounted-for list. Steps 2–3 above are what it runs;
-   - preview the backing in the browser (Space): *Lineup backing* plays exactly what the laptop will play in the current lineup, *Full song* plays the mix bounce; click, solo/mute, play from / loop a section. Rehearsal aid only: the show runs in Live;
+   - preview the backing in the browser (Space): *Lineup backing* plays exactly what the laptop will play in the current lineup, *Full song* plays the mix bounce; click, spoken cues (rendered with `say` like the Live set's Cues track, cached in `stems/preview/` and re-rendered when sections change), solo/mute, play from / loop a section. MIDI-only parts (no stem yet) play on a simple browser synth, marked *synth preview*. Rehearsal aid only: the show runs in Live. Hover anything for details (section, part and cell tooltips show bars, cue text, treatment, who plays it, stem source);
    - toggle spoken **Cues** and **Auto-advance**, set per-section cue text and vamp;
    - name and adjust sections;
    - set treatments per part and section;
