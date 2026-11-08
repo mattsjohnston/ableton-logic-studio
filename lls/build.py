@@ -14,7 +14,7 @@ import copy, json, os, shutil, subprocess, tempfile
 from collections import Counter
 import numpy as np
 
-from . import als, lineup as LU
+from . import als, chains, lineup as LU
 from .ingest import write_wav, _read_wav
 
 CLICK_OUT = 3  # interface outputs 3/4 = in-ears (until the output plan is known)
@@ -281,8 +281,14 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
         t = add_track(a_proto, f"{label} (live: {perf.get('name', who)})", COLORS["live-vocal" if label == "Vocal" else "live-guitar"], {})
         als.route_audio_input(t, rig.get("audio_input"))
         als.set_monitoring(t, als.MONITOR_IN, armed=False)
+        als.route_main_output(t)
+        fx = rig.get("fx", "default")
+        if fx not in chains.FX_MODES: raise ValueError(f"rig {rig_id}: fx must be one of {chains.FX_MODES}, got {fx!r}")
+        devs = [] if fx == "none" else {"Vocal": chains.vocal_chain, "Bass": chains.bass_chain}.get(label, chains.guitar_chain)(P)
+        chains.insert_chain(t, devs, ids)  # replaces the template's generic channel strip
+        fxnote = f"{label.lower()} chain: {chains.describe(devs)}" if devs else "fx: none (no devices)"
         report.append((f"{label} input ({who}/{rig_id})", "live-vocal" if label == "Vocal" else "live-guitar",
-                       f"interface input {rig.get('audio_input')}, monitoring In; covers {', '.join(pids)}"))
+                       f"interface input {rig.get('audio_input')}, monitoring In, not armed, output Main; {fxnote}; covers {', '.join(pids)}"))
     built[:] = built[n_parts_tracks:] + built[:n_parts_tracks]  # live inputs first
 
     make_drum_track = _drum_maker()

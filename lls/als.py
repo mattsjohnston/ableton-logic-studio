@@ -217,6 +217,11 @@ def route_midi_input(track, port, channel):
         _set_routing(r, f"MidiIn/External.Dev:{port}/{ch}", port, lower)
 
 
+def route_main_output(track):
+    """Output to the Main/Master bus (the template's own encoding: Target AudioOut/Main, display "Master")."""
+    _set_routing(track.find("DeviceChain/AudioOutputRouting"), "AudioOut/Main", "Master", "")
+
+
 def set_monitoring(track, mode, armed=None):
     ms = track.find("DeviceChain/MainSequencer")
     ms.find("MonitoringEnum").set("Value", str(mode))
