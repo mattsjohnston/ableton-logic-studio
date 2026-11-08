@@ -11,6 +11,13 @@
 - 🧪 Stand-ins for the missing Logic samples: silent stems (peak < -60 dBFS) count as missing; Hi-Hat 1 / Snare 2 play their MIDI through a Simpler with an Ableton Core Library sample (`lls/standins.py`), flagged "⚠ stand-in sample" in the report. Not yet heard in Live.
 - ✅ Playback CPU: busiest section of the 4-piece set (3 Analog Lab AU, Drum Rack, 10 stems, click, cues) = **20–23 %** on Live's CPU meter (M3 Pro).
 
+## Sound completeness (2026-11-07, verified in Live)
+- ✅ Reverb/delay returns approximating the 4 Logic auxes (Big Plate 4.4 s, Vocal Plate 1.1 s, Hall 3.9 s, Room 0.4 s) + Delay. Sends are by role (Logic send levels aren't decodable from ProjectData; docs/sends.md).
+- ✅ Vocal input chain (EQ Eight low-cut → De-esser → Compressor) and bass DI chain (Amp → Cabinet), from Live Core Library presets. `fx: "none"` per rig turns them off.
+- ✅ Hi-hat/snare: stand-in samples from Live's Core Library (80s Spacecraft hat, 80s snare). Silent Logic exports are ignored.
+- ✅ CPU with all of the above in the busiest section: 22–25 %.
+- ✅ Each rehearsal build gets a timestamped filename, so Live's "Save changes?" prompt can never overwrite a fresh build (that happened once). Setlist builds keep plain names.
+
 ## Phase 2: UI + lineups
 - ✅ Lineup engine: resolve / validate / suggest for 2–5 performers; live treatments (vocal/bass inputs, keyboard port+channel routing, drums). Named-port routing verified in Live (Impulse (MIDI) Ch.1).
 - ✅ Local web UI (`python -m lls ui`): sections, treatments, lineup board, grouped checks, build + open in Live. Headless-browser click-through passed.
@@ -26,7 +33,7 @@
 - 🧪 Setlist build (one set per song, show order), running order md/html, phone fallback mixes (+ click-left), `docs/stage-setup.md` (controller details partly unverified).
 - 🧪 Spoken cues track (on for Thoughts).
 - ✅ Scene auto-advance verified in Live: Intro (4 bars) moved on to Break 1 by itself (FollowActionA=4 = Next, FollowTime in beats).
-- Not built: AbletonOSC rehearsal remote. It's optional, because rebuilding/opening a set per lineup from the UI covers lineup switching.
+- ✅ UI "Engine: Live": transport drives Live via AbletonOSC (fire/loop/stop sections, playhead follows Live, S/M mutes Live tracks). AbletonOSC is bound to 127.0.0.1, which takes effect after the next Live restart.
 
 ## Needs Matt
 1. Wake/unlock the Mac so the GUI checks and Logic exports can finish.
