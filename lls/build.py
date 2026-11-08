@@ -14,7 +14,7 @@ import copy, json, os, shutil, subprocess, tempfile
 from collections import Counter
 import numpy as np
 
-from . import als, lineup as LU
+from . import als, lineup as LU, sends as SD
 from .ingest import write_wav, _read_wav
 
 CLICK_OUT = 3  # interface outputs 3/4 = in-ears (until the output plan is known)
@@ -150,6 +150,7 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
     opts = song.get("options") or {}
     cues = bool(opts.get("cues", False) if cues is None else cues)
     auto_advance = bool(opts.get("auto_advance", False) if auto_advance is None else auto_advance)
+    returns = bool(opts.get("returns", True))  # Logic-style aux reverb returns + sends (lls.sends)
     click_out = int(((band.get("interface") or {}).get("outputs") or {}).get("click", [CLICK_OUT])[0])
     res = LU.resolve(song, band, lineup)
     problems = LU.validate(song, band, lineup)
@@ -170,6 +171,7 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
     secs = song["sections"]; n = len(secs) + 1  # + STOP scene
     next_tid = max([int(t.get("Id")) for t in tracks] + [0]) + 1
     report, built = [], []
+    send_plan = []  # (track, {reverb key: dB}) — heuristic sends by role, applied once the returns exist
     live_tracks = []  # (track, performer, rig, live section indices, clip section indices, kind)
     drum_groups = {}  # (performer, rig) -> [part]
     audio_groups = {}  # (performer, rig) -> [part id]  (live-vocal / live-guitar)
@@ -232,7 +234,8 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
                 notes.append(f"NO STEM for {len(A)} backing sections — export it from Logic"); A = []
             if A:
                 clips = stem_clips(part, name, A, COLORS["backing-audio"])
-                add_track(a_proto, name + (" (backing)" if V else ""), COLORS["backing-audio"], clips)
+                st = add_track(a_proto, name + (" (backing)" if V else ""), COLORS["backing-audio"], clips)
+                send_plan.append((st, SD.sends_for_role(LU.role_hint(part))))
                 notes.append(f"{len(clips)} section clips from {'exported' if part.get('stem') else 'RAW (no FX)'} stem")
             report.append((name, _summary(ts), "; ".join(notes) or "nothing to play")); continue
 
@@ -240,7 +243,8 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
         if A:
             if stem_ok:
                 clips = stem_clips(part, name, A, COLORS["backing-audio"])
-                add_track(a_proto, name + (" (stem)" if (M or L or D) else ""), COLORS["backing-audio"], clips)
+                st = add_track(a_proto, name + (" (stem)" if (M or L or D) else ""), COLORS["backing-audio"], clips)
+                send_plan.append((st, SD.sends_for_role(LU.role_hint(part))))
                 notes.append(f"{len(clips)} audio clips from {'exported' if part.get('stem') else 'RAW (no FX)'} stem")
             else:
                 M = sorted(M + A)  # Logic built-in with no exported stem yet: fall back to MIDI so nothing is lost
@@ -255,6 +259,7 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
             else:
                 t = add_track(P.midi_track, "⚠ " + name, COLORS["needs-stem"], clips)
                 notes.append(f"{len(clips)} MIDI clips, NO INSTRUMENT ({inst.get('name')}: Logic-only) — export its stem")
+            send_plan.append((t, SD.sends_for_role(LU.role_hint(part))))
             if L:
                 who, rig_id, rig, multi = live_rig(per, L)
                 als.route_midi_input(t, rig.get("midi_port"), rig.get("midi_channel"))
@@ -280,6 +285,7 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
         label = "Vocal" if rig.get("kind") == "vocal" else ("Bass" if rig.get("kind") == "bass" else "Guitar")
         t = add_track(a_proto, f"{label} (live: {perf.get('name', who)})", COLORS["live-vocal" if label == "Vocal" else "live-guitar"], {})
         als.route_audio_input(t, rig.get("audio_input"))
+        send_plan.append((t, SD.sends_for_role("vocal", live_audio_vocal=True) if label == "Vocal" else {}))
         als.set_monitoring(t, als.MONITOR_IN, armed=False)
         report.append((f"{label} input ({who}/{rig_id})", "live-vocal" if label == "Vocal" else "live-guitar",
                        f"interface input {rig.get('audio_input')}, monitoring In; covers {', '.join(pids)}"))
@@ -300,6 +306,7 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
             proto = P.midi_track
             note = f"⚠ lls.drumrack missing: plain MIDI track, NO DRUM RACK for {len(pids)} parts"
         t = add_track(proto, f"Drums (live: {who})", COLORS["live-drums"], {})
+        send_plan.append((t, SD.sends_for_role("drums")))
         als.route_midi_input(t, rig.get("midi_port"), rig.get("midi_channel"))
         als.set_monitoring(t, als.MONITOR_IN, armed=False)
         report.append((f"Drums ({who}/{rig_id})", "live-drums",
@@ -341,6 +348,13 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
                        f"{click_out}/{click_out + 1} (separate track from the click)"))
 
     for i, t in enumerate(built): tracks.insert(i, t)
+    if returns:
+        ret_names, next_tid = SD.set_returns(ls, ids, SD.REVERBS, next_tid)
+        keys = [r["key"] for r in SD.REVERBS]
+        for t, levels in send_plan: SD.apply_sends(t, keys, levels)
+        report.append(("Returns (Logic aux approximation)", "sends",
+                       f"{', '.join(ret_names)}; send levels are HEURISTIC by role (not decoded from Logic), "
+                       f"{sum(1 for _, l in send_plan if l)} tracks send"))
     for t in tracks:
         if t.tag == "ReturnTrack": als.fill_slots(t, n, {})
 
