@@ -374,6 +374,23 @@ def _write_pcm16(src, dst, mono=False):
 CUES_SR = 22050      # speech only: a quarter of the bytes of 44.1k stereo
 CUES_KEEP = 4        # rendered cue files kept per song (undo/redo flips between recent versions)
 _cue_locks, _cue_locks_lock = {}, threading.Lock()
+_spoken, _spoken_lock = {}, threading.Lock()   # (speak fn, voice settings, sr, text) -> audio: an edit re-speaks only what changed
+
+
+def _speak_all(B, texts, sr):
+    """Speak the unique cue texts in parallel (`say` is ~1 s each) and memoise them. Returns a speak(text, sr) for cues_wav."""
+    fn = B._speak
+    key = lambda t: (id(fn), tuple(B.CUE_VOICES), B.CUE_RATE, sr, t)
+    with _spoken_lock: todo = [t for t in dict.fromkeys(texts) if key(t) not in _spoken]
+    if todo:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(todo))) as ex:
+            for t, audio in zip(todo, ex.map(lambda t: fn(t, sr), todo)):
+                with _spoken_lock:
+                    if len(_spoken) > 512: _spoken.clear()
+                    _spoken[key(t)] = audio
+    with _spoken_lock: got = {t: _spoken[key(t)] for t in texts}
+    return lambda text, _sr: got[text]
 
 
 def cues_hash(song):
@@ -401,7 +418,9 @@ def cues_preview(song_dir, song):
         os.makedirs(pdir, exist_ok=True)
         tmp = os.path.join(pdir, f".cues-{h}-24.wav")
         try:
-            placed = B.cues_wav(tmp, s)
+            bpb = s["time_signature"][0] * 4 / s["time_signature"][1]
+            texts = [B.cue_text(x) for x in s["sections"] if x["start"] - bpb >= 0]   # as cues_wav: none before bar 2
+            placed = B.cues_wav(tmp, s, speak=_speak_all(B, texts, CUES_SR))
             _write_pcm16(tmp, dst, mono=True)
         finally:
             if os.path.exists(tmp): os.unlink(tmp)
