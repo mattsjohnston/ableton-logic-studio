@@ -143,7 +143,7 @@ def _drum_maker():
         return None
 
 
-def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=None, auto_advance=None):
+def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=None, auto_advance=None, versioned=True):
     """cues / auto_advance: None -> song.json "options" ({"cues": bool, "auto_advance": bool}, both default false)."""
     song = LU.load_song(song_dir)
     band = _find_band(band_path)
@@ -159,7 +159,11 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
     proj = os.path.abspath(os.path.join(out_root, title, lineup, f"{title} Project"))
     if os.path.exists(proj): shutil.rmtree(proj)
     smp = os.path.join(proj, "Samples"); os.makedirs(smp)
-    out_als = os.path.join(proj, f"{title}.als")
+    # Each rehearsal build gets its own filename: if Live still has an older build of this set open with unsaved changes,
+    # its "Save changes?" prompt can only ever write to the OLD file, never over the new build. Setlist (show) builds use
+    # the plain name (versioned=False).
+    import time as _time
+    out_als = os.path.join(proj, f"{title} {_time.strftime('%m%d-%H%M%S')}.als" if versioned else f"{title}.als")
 
     root = als.load_gz(als.BASE); ls = root.find("LiveSet")
     root.set("Creator", "Ableton Logic Studio")

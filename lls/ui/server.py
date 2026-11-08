@@ -774,8 +774,14 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def _als_path(self, song, lid):
+        """Newest build of this song+lineup (builds are versioned by timestamp; see build.build)."""
         t = song["title"]
-        return os.path.join(self.out_root, t, lid, f"{t} Project", f"{t}.als")
+        proj = os.path.join(self.out_root, t, lid, f"{t} Project")
+        try:
+            cands = [os.path.join(proj, f) for f in os.listdir(proj) if f.endswith(".als")]
+        except OSError:
+            cands = []
+        return max(cands, key=os.path.getmtime) if cands else os.path.join(proj, f"{t}.als")
 
     def api_live(self, method, what):
         from lls import live_engine as LE
@@ -843,7 +849,8 @@ class Handler(BaseHTTPRequestHandler):
             snap = self._snap(0)
             if snap.get("busy"): raise ApiError(409, snap["error"])
             als = self._als_path(song, lid)
-            if ok(snap) and not body.get("force"):
+            opened = getattr(type(self), "_last_opened", {}).get((body.get("slug"), lid))
+            if ok(snap) and not body.get("force") and opened == als and os.path.isfile(als):
                 return self.send_json(200, {"state": "loaded", "already": True, "als": als, "built": False,
                                             "message": "This set is already open in Live"})
             newest = max([os.path.getmtime(os.path.join(info["dir"], "song.json"))]
@@ -852,6 +859,8 @@ class Handler(BaseHTTPRequestHandler):
             if built: als = self._build(info["dir"], lid)[0] or als
             if not os.path.isfile(als): raise ApiError(500, f"build did not produce {als}")
             subprocess.Popen(list(self.open_cmd) + [als], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if not hasattr(type(self), "_last_opened"): type(self)._last_opened = {}
+            type(self)._last_opened[(body.get("slug"), lid)] = als
             end = time.time() + self.live_open_timeout
             while time.time() < end:
                 time.sleep(min(0.5, self.live_open_timeout / 10))

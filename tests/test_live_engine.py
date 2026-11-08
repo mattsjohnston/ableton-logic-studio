@@ -251,12 +251,14 @@ class Api(unittest.TestCase):
 
     def test_open_builds_and_waits(self):
         st, r = self.req("POST", "/api/live/open", {"slug": "tiny-song", "lineup_id": "live"})
-        self.assertEqual((st, r["state"], r.get("already")), (200, "loaded", True))
+        self.assertEqual((st, r["state"]), (200, "loaded"))  # matching names alone don't count: we open our newest build
+        st, r = self.req("POST", "/api/live/open", {"slug": "tiny-song", "lineup_id": "live"})
+        self.assertEqual((st, r["state"], r.get("already")), (200, "loaded", True))  # now it's the build we opened
         self.fake.tracks = ["Other"]                  # Live still shows another set: build, open, wait, give up
         st, r = self.req("POST", "/api/live/open", {"slug": "tiny-song", "lineup_id": "live"})
         self.assertEqual((st, r["state"]), (202, "waiting"))
         self.assertIn("save dialog", r["message"])
-        self.assertTrue(os.path.isfile(r["als"])); self.assertTrue(r["built"])
+        self.assertTrue(os.path.isfile(r["als"]))  # already up to date after the first open
         threading.Timer(0.3, lambda: setattr(self.fake, "tracks", list(self.tracks_live))).start()
         st, r = self.req("POST", "/api/live/open", {"slug": "tiny-song", "lineup_id": "live", "force": True})
         self.assertEqual((st, r["state"], r["built"]), (200, "loaded", False))

@@ -25,9 +25,9 @@ def _build(song_dir, lineup, out_root, band_path):
     from .build import build
     kw = {"band_path": band_path} if band_path and "band_path" in inspect.signature(build).parameters else {}
     try:
-        return build(song_dir, lineup, out_root, **kw)
+        return build(song_dir, lineup, out_root, versioned=False, **kw)
     except TypeError:
-        return build(song_dir, lineup, out_root)
+        return build(song_dir, lineup, out_root, versioned=False)
 
 
 def fmt_time(sec):
