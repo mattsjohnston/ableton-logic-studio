@@ -29,6 +29,17 @@ API (all JSON):
   POST /api/setlists/<slug>/build         -> {job}   (lls.setlist.build_setlist into out/setlists/)
   GET  /api/setlists/<slug>/running-order -> the built running-order.html
   POST /api/reveal                        <- {path}  (open -R; only paths under the root)
+Live engine (AbletonOSC, lls.live_engine; the OSC reply port is bound on first use, one process at a time):
+  GET  /api/live/status?slug=&lineup=     -> {connected, tempo, playing, song_beat, scene, fired, offset, scenes, tracks,
+                                              loaded: {slug, title, lineup} | null, song: {scenes_match, lineup_match,
+                                              parts: {part: [Live track names]}}, error?}
+  POST /api/live/open                     <- {slug, lineup_id, force?} builds if stale, opens in Live, waits (20 s) for the
+                                              set to load -> {state: loaded | waiting, message, als, built}
+  POST /api/live/fire                     <- {slug, section_id} | {scene_index}  (launches that scene)
+  POST /api/live/loop                     <- {slug, section_id, on}  (on: launch it; Session clips loop by themselves)
+  POST /api/live/stop                     -> stops all clips and the transport
+  POST /api/live/mix                      <- {slug, lineup_id, solo: [part], mute: [part]} | {tracks: {name: {mute, solo}}}
+                                              -> {tracks: [{index, name, parts, mute, solo}], unmapped: [part]}
 validate/suggest/build need lls.lineup; without it they answer 501.
 """
 import hashlib, importlib, inspect, itertools, json, os, re, shutil, subprocess, sys, tempfile, threading, time, traceback, wave
@@ -443,6 +454,9 @@ def parse_range(header, size):
     return start, end
 
 
+_live_cache, _live_cache_lock = {}, threading.Lock()   # (song dir, song.json mtime, band.json mtime) -> expected Live names
+
+
 # ---------- HTTP ----------
 
 class Handler(BaseHTTPRequestHandler):
@@ -453,6 +467,8 @@ class Handler(BaseHTTPRequestHandler):
     osascript = ["osascript"]
     jobs = None                     # Jobs(), one per server
     quiet = False
+    live_link = None                # None -> lls.live_engine.link() (process-wide OSC client); tests inject one
+    live_open_timeout = 20.0        # POST /api/live/open: seconds to wait for Live to load the set
 
     def log_message(self, fmt, *args):
         if not self.quiet: sys.stderr.write("[ui] " + fmt % args + "\n")
@@ -614,6 +630,7 @@ class Handler(BaseHTTPRequestHandler):
             band = self.body(); check_band(band); write_json_atomic(self.band_path, band)
             return self.send_json(200, {"ok": True})
         if seg == ["open-in-live"] and method == "POST": return self.api_open(self.body())
+        if seg[:1] == ["live"] and len(seg) == 2: return self.api_live(method, seg[1])
         raise ApiError(404, f"no route {method} /api/{'/'.join(seg)}")
 
     def list_songs(self):
@@ -673,6 +690,10 @@ class Handler(BaseHTTPRequestHandler):
         lid = body.get("lineup_id") or "default"
         song = read_json(sp)
         if lid not in (song.get("lineups") or {}): raise ApiError(400, f"no lineup {lid!r} in song (save first?)")
+        als, report, acc = self._build(d, lid)
+        return self.send_json(200, {"als": als, "report": report, "accounted_for": acc})
+
+    def _build(self, d, lid):
         from lls import build as build_mod
         fn = build_mod.build
         kw = {"out_root": self.out_root}
@@ -688,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
             p = os.path.join(os.path.dirname(os.path.dirname(als)), "accounted-for.md")
             if os.path.exists(p):
                 with open(p, encoding="utf-8") as f: acc = f.read()
-        return self.send_json(200, {"als": als, "report": report, "accounted_for": acc})
+        return als, report, acc
 
     def api_open(self, body):
         als = body.get("als")
@@ -699,6 +720,146 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isfile(full): raise ApiError(404, "set not found (build it first)")
         subprocess.Popen(list(self.open_cmd) + [full], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return self.send_json(200, {"ok": True, "opened": full})
+
+    # ---- Live engine (AbletonOSC; lls.live_engine) ----
+    def _link(self):
+        from lls import live_engine as LE
+        return self.live_link or LE.link()
+
+    def _snap(self, names_ttl=None):
+        from lls import live_engine as LE
+        try:
+            return self._link().snapshot(names_ttl)
+        except LE.LiveBusy as e:
+            return {"connected": False, "busy": True, "error": e.strerror or str(e)}
+
+    def _snap_connected(self, names_ttl=None):
+        snap = self._snap(names_ttl)
+        if snap.get("busy"): raise ApiError(409, snap["error"])
+        if not snap.get("connected"): raise ApiError(503, "Live is not answering: is it running with AbletonOSC selected as a Control Surface?")
+        return snap
+
+    def _live_song(self, slug):
+        """Expected scene names and, per lineup, track names of this song's built sets (cached on file mtimes)."""
+        from lls import live_engine as LE
+        LU = self._need_lineup()
+        d = self.song_dir(slug); sp = os.path.join(d, "song.json")
+        bm = os.path.getmtime(self.band_path) if os.path.exists(self.band_path) else 0
+        key = (d, os.path.getmtime(sp), bm)
+        with _live_cache_lock: hit = _live_cache.get(key)
+        if hit is None:
+            song = LU.load_song(d); band = self._band({})
+            tracks = {}
+            for lid in song.get("lineups") or {}:
+                try: tracks[lid] = LE.expected_tracks(song, band, lid)
+                except Exception as e:  # noqa: BLE001 — a broken lineup shouldn't hide the others
+                    tracks[lid] = ([], {}); sys.stderr.write(f"[ui] live: lineup {lid}: {e}\n")
+            hit = {"slug": slug, "dir": d, "song": song, "scenes": LE.expected_scenes(song), "tracks": tracks}
+            with _live_cache_lock:
+                if len(_live_cache) > 64: _live_cache.clear()
+                _live_cache[key] = hit
+        return hit
+
+    def _live_loaded(self, snap):
+        """Which built set is open in Live: the song whose scene names match, and its lineup whose track names match."""
+        from lls import live_engine as LE
+        if not snap.get("connected"): return None
+        for s in self.list_songs():
+            if s.get("error"): continue
+            try: info = self._live_song(s["slug"])
+            except ApiError: return None
+            if info["scenes"] != snap["scenes"]: continue
+            lid = next((l for l, (names, _) in info["tracks"].items() if LE.same_names(names, snap["tracks"])), None)
+            return {"slug": s["slug"], "title": info["song"].get("title"), "lineup": lid}
+        return None
+
+    def _als_path(self, song, lid):
+        t = song["title"]
+        return os.path.join(self.out_root, t, lid, f"{t} Project", f"{t}.als")
+
+    def api_live(self, method, what):
+        from lls import live_engine as LE
+        if what == "status" and method == "GET":
+            snap = self._snap()
+            slug, lid = self.query.get("slug"), self.query.get("lineup")
+            if snap.get("connected"):
+                snap["loaded"] = self._live_loaded(snap)
+                if slug:
+                    info = self._live_song(slug)
+                    names, by_part = info["tracks"].get(lid, (None, {}))
+                    have = set(snap["tracks"] or [])
+                    snap["song"] = {"slug": slug, "lineup": lid, "scenes_match": info["scenes"] == snap["scenes"],
+                                    "lineup_match": LE.same_names(names, snap["tracks"]),
+                                    "parts": {pid: [n for n in ns if n in have] for pid, ns in by_part.items()}}
+            return self.send_json(200, snap)
+        if method != "POST": raise ApiError(405, "method not allowed")
+        body = self.body()
+        if what == "stop":
+            self._snap_connected(); self._link().stop()
+            return self.send_json(200, {"ok": True})
+        if what in ("fire", "loop"):
+            snap = self._snap_connected()
+            if body.get("section_id") is not None:
+                info = self._live_song(body.get("slug") or "")
+                ids = [s["id"] for s in info["song"]["sections"]]
+                if body["section_id"] not in ids: raise ApiError(400, f"no section {body['section_id']!r}")
+                if info["scenes"] != snap["scenes"]:
+                    raise ApiError(409, "Live has a different set open: open this song in Live first")
+                idx = ids.index(body["section_id"])
+            elif what == "fire" and isinstance(body.get("scene_index"), int) and not isinstance(body["scene_index"], bool):
+                idx = body["scene_index"]
+                if not 0 <= idx < len(snap["scenes"] or []): raise ApiError(400, f"scene_index out of range (Live has {len(snap['scenes'] or [])} scenes)")
+            else:
+                raise ApiError(400, "section_id (with slug) or scene_index required")
+            link = self._link()
+            if what == "loop" and not body.get("on", True):
+                link.loop = None
+                return self.send_json(200, {"ok": True, "loop": None})
+            link.fire(idx)
+            if what == "loop": link.loop = {"slug": body.get("slug"), "section_id": body.get("section_id"), "scene": idx}
+            elif link.loop and link.loop["scene"] != idx: link.loop = None
+            return self.send_json(200, {"ok": True, "scene": idx, "loop": link.loop})
+        if what == "mix":
+            snap = self._snap_connected()
+            if isinstance(body.get("tracks"), dict):
+                want = body["tracks"]
+                plan = [{"index": i, "name": n, "parts": [], "mute": bool((want[n] or {}).get("mute")), "solo": bool((want[n] or {}).get("solo"))}
+                        for i, n in enumerate(snap["tracks"]) if n in want]
+                unmapped = [n for n in want if n not in snap["tracks"]]
+            else:
+                info = self._live_song(body.get("slug") or "")
+                lid = body.get("lineup_id") or "default"
+                if lid not in info["tracks"]: raise ApiError(400, f"no lineup {lid!r} in song")
+                solo, mute = body.get("solo") or [], body.get("mute") or []
+                if not all(isinstance(x, str) for x in list(solo) + list(mute)): raise ApiError(400, "solo/mute must be lists of part ids")
+                plan, unmapped = LE.mix_plan(snap["tracks"], info["tracks"][lid][1], solo, mute)
+            self._link().set_mix(plan)
+            return self.send_json(200, {"tracks": plan, "unmapped": unmapped})
+        if what == "open":
+            info = self._live_song(body.get("slug") or "")
+            song, lid = info["song"], body.get("lineup_id") or "default"
+            if lid not in info["tracks"]: raise ApiError(400, f"no lineup {lid!r} in song (save first?)")
+            ok = lambda s: s.get("connected") and s["scenes"] == info["scenes"] and LE.same_names(info["tracks"][lid][0], s["tracks"])
+            snap = self._snap(0)
+            if snap.get("busy"): raise ApiError(409, snap["error"])
+            als = self._als_path(song, lid)
+            if ok(snap) and not body.get("force"):
+                return self.send_json(200, {"state": "loaded", "already": True, "als": als, "built": False,
+                                            "message": "This set is already open in Live"})
+            newest = max([os.path.getmtime(os.path.join(info["dir"], "song.json"))]
+                         + ([os.path.getmtime(self.band_path)] if os.path.exists(self.band_path) else []))
+            built = not os.path.isfile(als) or os.path.getmtime(als) < newest
+            if built: als = self._build(info["dir"], lid)[0] or als
+            if not os.path.isfile(als): raise ApiError(500, f"build did not produce {als}")
+            subprocess.Popen(list(self.open_cmd) + [als], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            end = time.time() + self.live_open_timeout
+            while time.time() < end:
+                time.sleep(min(0.5, self.live_open_timeout / 10))
+                if ok(self._snap(0)):
+                    return self.send_json(200, {"state": "loaded", "als": als, "built": built, "message": "Open in Live"})
+            return self.send_json(202, {"state": "waiting", "als": als, "built": built,
+                                        "message": "Waiting for Live (check for a save dialog)"})
+        raise ApiError(404, f"no route {method} /api/live/{what}")
 
     # ---- preview audio ----
     def api_stem(self, d, song, pid):
@@ -916,8 +1077,11 @@ def _safe_name(s):
     return re.sub(r'[/\\:*?"<>|]+', "-", s).strip()  # same as lls.setlist.safe
 
 
-def make_server(root=".", port=8765, host="127.0.0.1", quiet=False, open_cmd=None, reveal_cmd=None, osascript=None):
+def make_server(root=".", port=8765, host="127.0.0.1", quiet=False, open_cmd=None, reveal_cmd=None, osascript=None,
+                live_link=None, live_open_timeout=None):
     handler = type("LlsHandler", (Handler,), {"root": os.path.abspath(root), "quiet": quiet, "jobs": Jobs(),
+                                              **({"live_link": live_link} if live_link else {}),
+                                              **({"live_open_timeout": live_open_timeout} if live_open_timeout else {}),
                                               **({"open_cmd": open_cmd} if open_cmd else {}),
                                               **({"reveal_cmd": reveal_cmd} if reveal_cmd else {}),
                                               **({"osascript": osascript} if osascript else {})})

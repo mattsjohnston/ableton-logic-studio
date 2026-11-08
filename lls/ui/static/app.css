@@ -304,6 +304,16 @@ table.rigs select.inp { min-width: 74px; }
 .playhead { position: absolute; top: 0; bottom: 0; left: var(--hdr); width: 0; border-left: 1px solid var(--accent3); z-index: 3; pointer-events: none; opacity: .55; }
 .playhead.on { opacity: 1; box-shadow: 0 0 8px var(--accent3); }
 .playhead::before { content: ""; position: absolute; top: 0; left: -5px; border: 5px solid transparent; border-top: 7px solid var(--accent3); }
+.playhead.live { border-left-color: var(--ok); }
+.playhead.live.on { box-shadow: 0 0 8px var(--ok); }
+.playhead.live::before { border-top-color: var(--ok); }
+.lv-conn { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.lv-conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.lv-conn.ok { color: var(--text); }
+.lv-conn.ok i { background: var(--ok); box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 70%, transparent); }
+.lv-conn.bad { color: var(--err); cursor: help; }
+.lv-conn.bad i { background: var(--err); }
+.pv-status .on-y { color: var(--ok); }
 #ruler { cursor: pointer; }
 .sm { display: inline-flex; gap: 1px; flex: none; }
 .smb { width: 16px; height: 16px; padding: 0; font: 600 9px var(--mono); border: 1px solid var(--line2); background: var(--bg); color: var(--faint); border-radius: 3px; cursor: pointer; }

@@ -54,6 +54,8 @@ const S = {
   pv: { mode: pref.get('pv.mode', 'lineup'), click: pref.get('pv.click', false), vol: pref.get('pv.vol', 0.8),
         loop: null, solo: new Set(), mute: new Set(), state: {},
         cues: false, cuesVol: pref.get('pv.cuesVol', 0.9), cue: null, cueSig: '', busy: null },
+  eng: pref.get('engine', 'browser') === 'live' ? 'live' : 'browser',   // transport engine: browser preview | Ableton Live
+  live: { st: null, err: '', at: 0, cursor: 0, loop: null, launch: null, opening: false, sig: '', rowSig: '' },
   tlW: 0,
 };
 if (S.view === 'import') S.view = 'arrange';  // the import view needs a mode; open it from the song picker
@@ -243,14 +245,14 @@ async function refreshSongs() { S.songs = await api('GET', '/songs'); renderTop(
 
 async function loadSong(slug) {
   const [song, activity] = await Promise.all([api('GET', `/songs/${slug}`), api('GET', `/songs/${slug}/activity`).catch(() => null)]);
-  if (slug !== S.slug) { PV.reset(); S.pv.solo.clear(); S.pv.mute.clear(); S.pv.loop = null; S.pv.cue = null; S.pv.cueSig = ''; S.pv.cues = !!(song.options || {}).cues; }
+  if (slug !== S.slug) { PV.reset(); S.pv.solo.clear(); S.pv.mute.clear(); S.pv.loop = null; S.live.loop = null; S.live.cursor = 0; S.pv.cue = null; S.pv.cueSig = ''; S.pv.cues = !!(song.options || {}).cues; }
   S.slug = slug; S.song = normalize(song); S.saved = JSON.stringify(S.song); S.activity = activity;
   S.hist = []; S.fut = []; S.selSec = null; S.highlight = null; S.shellKey = '';
   const lids = Object.keys(S.song.lineups);
   const wantL = pref.get('lineup:' + slug, null);
   S.lineupId = lids.includes(wantL) ? wantL : lids[0];
   pref.set('song', slug);
-  render(); runValidate();
+  render(); runValidate(); lvSchedule(0);
 }
 
 async function save() {
@@ -421,7 +423,7 @@ VIEWS.arrange = {
       const bars = Math.round((s.end - s.start) / bp);
       const inner = S.renaming === s.id
         ? `<input id="rename" value="${esc(s.name)}" aria-label="Section name">`
-        : `<span class="sname">${esc(s.name)}</span>${s.vamp ? '<span class="vamp">∞</span>' : ''}${s.cue ? '<span class="cue-mk">❝</span>' : ''}${S.pv.loop === s.id ? '<span class="loop-mk">⟲</span>' : ''}<span class="sbars">${bars}b</span>`;
+        : `<span class="sname">${esc(s.name)}</span>${s.vamp ? '<span class="vamp">∞</span>' : ''}${s.cue ? '<span class="cue-mk">❝</span>' : ''}${curLoop() === s.id ? '<span class="loop-mk">⟲</span>' : ''}<span class="sbars">${bars}b</span>`;
       secs += `<div class="sec ${S.selSec === s.id ? 'sel' : ''} ${hl.section === s.id ? 'hl' : ''}" data-sid="${esc(s.id)}"
         style="left:${pct(s.start)}%;width:${pct(s.end - s.start)}%;--sc:${SEC_COLORS[i % SEC_COLORS.length]}"
         ${S.renaming === s.id ? '' : 'data-tip-rich="sec" data-tip-pos="below"'}>${inner}</div>`;
@@ -449,13 +451,13 @@ VIEWS.arrange = {
           style="left:${pct(s.start)}%;width:${pct(s.end - s.start)}%;--tc:var(--t-${t})"
           data-tip-rich="cell"><div class="bars">${bars}</div></div>`;
       }
-      const aud = pvAudible(p);
+      const [aud, smTip] = isLive() ? lvPartSM(p) : [pvAudible(p), pvAudible(p) ? `Preview solo / mute\n${synthOf(p) ? 'Browser synth (MIDI-only part)' : 'Stem playback'}` : `Not in the preview\n${pvWhyOff(p)}`];
       rows += `<div class="trow part ${hl.part === p.id ? 'hl' : ''} ${aud ? '' : 'pv-off'}" data-part="${esc(p.id)}">
         <div class="ph" data-part="${esc(p.id)}" data-droppart="1" data-tip-rich="part" data-tip-pos="right">
           <span class="issue-dot"></span>
           <div class="pmeta"><span class="pname">${esc(p.name)}</span><div class="prow2">${synthOf(p) ? `<span class="pv-syn">♪ synth preview</span><span class="pv-syn-i">${esc((p.instrument || {}).name || '')}</span>` : instBadge(p, false)}</div></div>
           ${whoLabel(p.id, false)}
-          <span class="sm" data-tip="${esc(aud ? `Preview solo / mute\n${synthOf(p) ? 'Browser synth (MIDI-only part)' : 'Stem playback'}` : `Not in the preview\n${pvWhyOff(p)}`)}"><button class="smb ${S.pv.solo.has(p.id) ? 'on' : ''}" data-act="solo" data-part="${esc(p.id)}" tabindex="-1" aria-label="Solo ${esc(p.name)}">S</button><button class="smb m ${S.pv.mute.has(p.id) ? 'on' : ''}" data-act="mute" data-part="${esc(p.id)}" tabindex="-1" aria-label="Mute ${esc(p.name)}">M</button></span>
+          <span class="sm" data-tip="${esc(smTip)}"><button class="smb ${S.pv.solo.has(p.id) ? 'on' : ''}" data-act="solo" data-part="${esc(p.id)}" tabindex="-1" aria-label="Solo ${esc(p.name)}">S</button><button class="smb m ${S.pv.mute.has(p.id) ? 'on' : ''}" data-act="mute" data-part="${esc(p.id)}" tabindex="-1" aria-label="Mute ${esc(p.name)}">M</button></span>
           ${chip(lt, `draggable="true" data-drag-t="${lt}" data-act="tmenu" data-part="${esc(p.id)}" data-tip-rich="chip" data-t="${lt}"`)}
         </div>
         <div class="lane" style="width:${W}px">${cells}</div></div>`;
@@ -596,6 +598,7 @@ function pvSetCues(on) {
 function pvSoloMute(kind, pid) {
   const set = S.pv[kind];
   if (set.has(pid)) set.delete(pid); else set.add(pid);
+  if (isLive()) { lvMix(); renderMain(); return; }
   const needsStems = S.pv.mode === 'full' && S.song.mix;
   if (PV.playing && needsStems) pvPlay(PV.pos()); else PV.setGains(pvGain);
   renderMain();
@@ -604,24 +607,32 @@ function pvSoloMute(kind, pid) {
 let pvRaf = 0;
 function pvAnimate() {
   cancelAnimationFrame(pvRaf);
-  const step = () => { drawPlayhead(); updateClock(); if (PV.playing || PV.preparing) pvRaf = requestAnimationFrame(step); };
+  const step = () => { drawPlayhead(); updateClock(); if (tpPlaying() || PV.preparing) pvRaf = requestAnimationFrame(step); };
   pvRaf = requestAnimationFrame(step);
 }
 function drawPlayhead() {
   const ph = $('#playhead'); if (!ph || !S.song) return;
-  const frac = clamp(PV.pos() / songSecs(), 0, 1);
+  const frac = clamp(tpPos() / songSecs(), 0, 1);
   ph.style.transform = `translateX(${(frac * S.tlW).toFixed(1)}px)`;
-  ph.classList.toggle('on', PV.playing);
+  ph.classList.toggle('on', tpPlaying());
+  ph.classList.toggle('live', isLive());
 }
 function fmtPos(sec) {
   const beats = sec / spb(), bp = bpb();
   const bar = Math.floor(beats / bp) + 1, beat = Math.floor(beats % bp) + 1;
   return `${bar}.${beat} · ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 }
-function updateClock() { const c = $('#pv-clock'); if (c && S.song) c.textContent = fmtPos(PV.pos()); }
+function updateClock() { const c = $('#pv-clock'); if (c && S.song) c.textContent = fmtPos(tpPos()); }
+
+const ENGINE_SEG = () => `<span class="lbl">Engine</span><div class="seg" role="group" aria-label="Engine">
+      <button data-act="engine" data-eng="browser" aria-pressed="${!isLive()}" data-tip="Browser engine&#10;Previews stems and a simple synth in the browser (rehearsal aid)">Browser</button>
+      <button data-act="engine" data-eng="live" aria-pressed="${isLive()}" data-tip="Live engine&#10;The transport drives Ableton Live through AbletonOSC: real instruments, stems and live inputs">Live</button>
+    </div>
+    <span class="sep"></span>`;
 
 function renderTransport() {
   const el = $('#transport'); if (!el || !S.song) return;
+  if (isLive()) { renderLiveTransport(el); return; }
   const st = S.pv.state || {}, plan = pvPlan(), sel = secById(S.selSec), lp = S.pv.loop && secById(S.pv.loop);
   const stems = plan.sources.filter((s) => s.pid !== '_cues');
   const loaded = stems.filter((s) => PV.status(s.key) === 'ok').length;
@@ -641,6 +652,7 @@ function renderTransport() {
   const playing = PV.playing || st.preparing || !!S.pv.busy;
   const stale = S.pv.cues && S.pv.cue && cuesStale();
   el.innerHTML = `
+    ${ENGINE_SEG()}
     <button class="btn icon tp ${playing ? 'on' : ''}" data-act="pv-toggle" data-tip="${playing ? 'Stop' : 'Play'}" data-tip-key="Space" aria-label="${playing ? 'Stop' : 'Play'}">${playing ? '■' : '▶'}</button>
     <button class="btn small" data-act="pv-from" ${sel ? '' : 'disabled'} data-tip="Play from the selected section" data-tip-key="P">▶ ${esc(sel ? sel.name : 'section')}</button>
     <button class="btn small ${lp ? 'act' : ''}" data-act="pv-loop" ${sel || lp ? '' : 'disabled'} data-tip="Loop the selected section&#10;Click again to stop looping" data-tip-key="L">⟲ ${lp ? 'Looping ' + esc(lp.name) : 'Loop'}</button>
@@ -657,6 +669,162 @@ function renderTransport() {
     ${S.pv.solo.size || S.pv.mute.size ? `<button class="btn small" data-act="pv-clear" data-tip="Clear solo / mute">Clear S/M</button>` : ''}
     <span class="pv-status">${status}${warn}</span>
     <span class="hint pv-note" data-tip="Rehearsal aid only&#10;On stage the set runs in Ableton Live.">preview · Live runs the show</span>`;
+}
+
+// ---------- Live engine: the transport drives Ableton Live through AbletonOSC (server: /api/live/*, lls/live_engine.py)
+// Session View: scene i = section i. Launching a scene is "play from"; its clips loop until another scene is launched,
+// so "loop" only means "don't move on". Position = section start + beats into the playing Click clip (from Live).
+const LV = S.live;
+const isLive = () => S.eng === 'live';
+const curLoop = () => (isLive() ? LV.loop : S.pv.loop);
+const lvConnected = () => !!LV.st?.connected;
+const lvSongOk = () => !!LV.st?.song?.scenes_match && LV.st.song.slug === S.slug;
+const lvSetOk = () => lvSongOk() && !!LV.st.song.lineup_match && LV.st.song.lineup === S.lineupId;
+const secAtBeat = (b) => S.song.sections.find((s) => b >= s.start && b < s.end) || S.song.sections[0];
+const LV_HELP = 'Live not connected — enable AbletonOSC\nOpen Ableton Live, then Settings → Link, Tempo & MIDI → Control Surface: AbletonOSC\n'
+  + 'Not in the list? Copy AbletonOSC into ~/Music/Ableton/User Library/Remote Scripts and restart Live\nAbletonOSC listens on UDP 11000 and replies on 11001';
+
+function lvPos() {   // seconds from bar 1
+  const st = LV.st, sec = st?.playing && lvSongOk() && st.scene != null ? S.song.sections[st.scene] : null;
+  if (!sec) return LV.cursor;
+  const len = sec.end - sec.start;
+  let off = st.offset != null ? st.offset : (st.song_beat ?? 0) - (LV.launch?.beat ?? st.song_beat ?? 0);
+  off += ((performance.now() - LV.at) / 1000) * (st.tempo || S.song.tempo) / 60;   // between polls: run on at tempo
+  return (sec.start + (((off % len) + len) % len)) * spb();
+}
+const tpPos = () => (isLive() ? lvPos() : PV.pos());
+const tpPlaying = () => (isLive() ? !!LV.st?.playing : PV.playing);
+
+let lvTimer = 0, lvBusy = false;
+function lvSchedule(ms) { clearTimeout(lvTimer); lvTimer = 0; if (isLive() && ms >= 0) lvTimer = setTimeout(lvPoll, ms); }
+async function lvPoll() {
+  if (!isLive()) return;
+  if (lvBusy) { lvSchedule(50); return; }
+  lvBusy = true;
+  const was = LV.st?.playing && S.song ? lvPos() : null, prevScene = LV.st?.playing ? LV.st.scene : null;
+  const q = S.slug ? `?slug=${encodeURIComponent(S.slug)}&lineup=${encodeURIComponent(S.lineupId)}` : '';
+  try { LV.st = await api('GET', '/live/status' + q); LV.err = ''; } catch (e) { LV.st = null; LV.err = e.message; }
+  lvBusy = false; LV.at = performance.now();
+  const st = LV.st;
+  if (st?.playing && st.scene != null && st.scene !== prevScene) LV.launch = { scene: st.scene, beat: st.song_beat ?? 0 };
+  if (was != null && !st?.playing) LV.cursor = was;
+  lvRefresh();
+  if (st?.playing) pvAnimate();
+  lvSchedule(document.hidden ? 3000 : st?.playing || st?.fired != null ? 100 : 1000);
+}
+function lvRefresh() {
+  if (S.view !== 'arrange' || !S.song || !isLive()) return;
+  const st = LV.st || {};
+  const rowSig = JSON.stringify([st.connected, st.song?.parts || null]);
+  const sig = JSON.stringify([LV.err, st.connected, st.busy, st.playing, st.scene, st.fired, st.loaded, st.song, LV.opening]);
+  if (rowSig !== LV.rowSig) { LV.rowSig = rowSig; LV.sig = sig; renderMain(); return; }
+  if (sig !== LV.sig) { LV.sig = sig; renderTransport(); }
+  if (!st.playing) { drawPlayhead(); updateClock(); }
+}
+async function lvPost(path, body) {
+  try { return await api('POST', '/live/' + path, body); } catch (e) { toast(e.message, true); return null; } finally { lvSchedule(30); }
+}
+function lvReady() {
+  if (!lvConnected()) { toast(LV.st?.error || LV.err || 'Live not connected: open Ableton Live with AbletonOSC enabled', true); return false; }
+  if (!lvSongOk()) { toast('Live has a different set open: click “Open in Live” first', true); return false; }
+  return true;
+}
+function lvFire(sid) {
+  const s = secById(sid); if (!s || !lvReady()) return;
+  const loopOff = LV.loop && LV.loop !== sid;
+  if (loopOff) LV.loop = null;
+  LV.cursor = s.start * spb();
+  lvPost('fire', { slug: S.slug, section_id: sid });
+  if (loopOff) renderMain(); else { renderTransport(); drawPlayhead(); updateClock(); }
+}
+function lvLoop(sid) {
+  if (!secById(sid)) return;
+  const on = LV.loop !== sid;
+  if (on && !lvReady()) return;
+  LV.loop = on ? sid : null;
+  if (on) { S.selSec = sid; LV.cursor = secById(sid).start * spb(); }
+  lvPost('loop', { slug: S.slug, section_id: sid, on });
+  renderMain();
+}
+function lvMix() {
+  if (!lvConnected()) { toast('Live not connected: solo / mute apply to the browser preview only', true); return; }
+  if (!lvSongOk()) return;      // another set is open: nothing sensible to map the parts onto
+  lvPost('mix', { slug: S.slug, lineup_id: S.lineupId, solo: [...S.pv.solo], mute: [...S.pv.mute] });
+}
+async function lvOpen() {
+  if (!S.song || LV.opening) return;
+  if (dirty() || bandDirty()) { await save(); if (dirty() || bandDirty()) return; }
+  LV.opening = true; renderTransport();
+  try {
+    const r = await api('POST', '/live/open', { slug: S.slug, lineup_id: S.lineupId });
+    if (r.state === 'loaded') toast(r.already ? 'Already open in Live' : `Opened in Live${r.built ? ' (built first)' : ''}`);
+    else toast(r.message || 'Waiting for Live (check for a save dialog)', true);
+  } catch (e) { toast(e.message, true); }
+  LV.opening = false; LV.sig = ''; renderTransport(); lvSchedule(0);
+}
+function lvPartSM(p) {   // [has a Live track, S/M tooltip] for a part row in Live mode
+  if (!lvConnected()) return [true, 'Live solo / mute\nLive is not connected'];
+  const names = lvSongOk() ? LV.st.song.parts?.[p.id] : null;
+  if (!names) return [true, 'Live solo / mute\nOpen this song in Live to map its parts to tracks'];
+  if (!names.length) return [false, `No track in the Live set\n${p.name} has no track in the set open in Live (“${lineup().name}” doesn’t play it, or Live has another lineup)`];
+  return [true, `Live solo / mute\nTracks: ${names.join(', ')}` + (names.some((n) => n.includes('(live:')) ? '\nShared live input: muting it mutes every part on that input' : '')];
+}
+
+function tpToggle() {
+  if (!isLive()) { pvToggle(); return; }
+  if (LV.st?.playing || LV.st?.fired != null) { lvPost('stop', {}); return; }
+  const s = (LV.loop && secById(LV.loop)) || secAtBeat(LV.cursor / spb());
+  if (s) lvFire(s.id);
+}
+function tpFrom(sid) { if (isLive()) lvFire(sid); else pvFromSection(sid); }
+function tpLoop(sid) { if (isLive()) lvLoop(sid); else pvLoop(sid); }
+function tpSeek(sec) {
+  if (!isLive()) { if (PV.playing) pvPlay(sec); else { PV.seek(sec); drawPlayhead(); updateClock(); } return; }
+  LV.cursor = sec;
+  if (LV.st?.playing) lvFire(secAtBeat(sec / spb()).id); else { drawPlayhead(); updateClock(); }
+}
+function setEngine(e) {
+  if (e === S.eng || !['browser', 'live'].includes(e)) return;
+  if (e === 'live' && (PV.playing || PV.preparing || S.pv.busy)) pvToggle();
+  if (e === 'live') LV.cursor = PV.pos(); else PV.seek(LV.cursor);
+  S.eng = e; pref.set('engine', e);
+  LV.sig = LV.rowSig = '';
+  if (isLive()) lvPoll().then(() => { if (S.pv.solo.size || S.pv.mute.size) lvMix(); }); else lvSchedule(-1);
+  renderMain();
+}
+
+function renderLiveTransport(el) {
+  const st = LV.st || {}, sel = secById(S.selSec), lp = LV.loop && secById(LV.loop), secs = S.song.sections;
+  const playing = !!st.playing, pending = st.fired != null;
+  const cur = playing && lvSongOk() && st.scene != null ? secs[st.scene] : null;
+  const next = pending && lvSongOk() ? secs[st.fired] : null;
+  const ld = st.loaded;
+  const what = ld ? `${ld.title} · ${ld.lineup ? (ld.slug === S.slug ? S.song.lineups[ld.lineup]?.name || ld.lineup : ld.lineup) : 'unknown lineup'}`
+    : 'a set that isn’t one of these songs';
+  let conn;
+  if (LV.err) conn = `<span class="lv-conn bad" data-tip="${esc('UI server error\n' + LV.err)}"><i></i>Server error</span>`;
+  else if (!LV.st) conn = '<span class="lv-conn"><span class="spin sm"></span> Connecting…</span>';
+  else if (st.busy) conn = `<span class="lv-conn bad" data-tip="${esc('OSC port busy\n' + st.error)}"><i></i>OSC port busy</span>`;
+  else if (!st.connected) conn = `<span class="lv-conn bad" data-tip="${esc(LV_HELP)}"><i></i>Live not connected</span>`;
+  else conn = `<span class="lv-conn ok" data-tip="${esc(`Live connected\nAbletonOSC · ${st.tempo} bpm · ${st.scenes?.length ?? 0} scenes · ${st.tracks?.length ?? 0} tracks\nOpen: ${what}`)}"><i></i>Live</span>`;
+  const need = st.connected && !lvSetOk();
+  const openTip = `Open in Live\nLive has ${what}; this is ${S.song.title} · ${lineup().name}\nBuilds the set if it’s out of date, then opens it. Live may ask to save the current set first.`;
+  const openBtn = need || LV.opening ? `<button class="btn small primary" data-act="lv-open" ${LV.opening ? 'disabled' : ''} data-tip="${esc(openTip)}">${LV.opening ? '<span class="spin sm"></span> Opening…' : 'Open in Live'}</button>` : '';
+  const status = cur ? `<span class="on-y">▶ ${esc(cur.name)}</span>${next && next !== cur ? ` → ${esc(next.name)}` : ''}`
+    : next ? `<span class="spin sm"></span> launching ${esc(next.name)}…` : st.connected && lvSongOk() ? 'stopped' : '';
+  const adv = (S.song.options || {}).auto_advance ? '\n⚠ Auto-advance is on: the scene’s follow action still moves on' : '';
+  el.innerHTML = `
+    ${ENGINE_SEG()}
+    <button class="btn icon tp ${playing || pending ? 'on' : ''}" data-act="pv-toggle" data-tip="${playing || pending ? 'Stop Live' : 'Play in Live&#10;Launches the section under the playhead'}" data-tip-key="Space" aria-label="${playing || pending ? 'Stop' : 'Play'}">${playing || pending ? '■' : '▶'}</button>
+    <button class="btn small" data-act="pv-from" ${sel ? '' : 'disabled'} data-tip="Launch the selected section in Live&#10;Fires its scene on the next bar" data-tip-key="P">▶ ${esc(sel ? sel.name : 'section')}</button>
+    <button class="btn small ${lp ? 'act' : ''}" data-act="pv-loop" ${sel || lp ? '' : 'disabled'} data-tip="${esc(`Loop the selected section in Live\nLaunches its scene and stays there: Session clips loop until another scene is launched${adv}`)}" data-tip-key="L">⟲ ${lp ? 'Looping ' + esc(lp.name) : 'Loop'}</button>
+    <button class="btn icon small" data-act="pv-zero" data-tip="Back to bar 1&#10;While playing, launches the first section" data-tip-key="Home" aria-label="Back to start">⇤</button>
+    <span class="pv-clock" id="pv-clock">${fmtPos(lvPos())}</span>
+    <span class="sep"></span>
+    ${conn}${openBtn}
+    <span class="pv-status">${status}</span>
+    ${S.pv.solo.size || S.pv.mute.size ? '<button class="btn small" data-act="pv-clear" data-tip="Clear solo / mute&#10;Unmutes and unsolos the mapped Live tracks">Clear S/M</button>' : ''}
+    <span class="hint pv-note" data-tip="Live engine&#10;Transport, S/M and the playhead follow Ableton Live through AbletonOSC. Space, P, L and Home work as in the browser engine.">Live engine · AbletonOSC</span>`;
 }
 
 function renderInspector() {
@@ -726,7 +894,7 @@ function richTip(kind, el) {
       title: s.name, sub: `bars ${s.start / bp + 1}–${s.end / bp + 1} · ${fmtSec(s.start * k)}–${fmtSec(s.end * k)}`,
       rows: [['Length', `${bars} bar${bars === 1 ? '' : 's'} · ${((s.end - s.start) * k).toFixed(1)} s`], ['Tempo', `${S.song.tempo} bpm · ${ts}`],
         ['Cue', cue], ['Vamp', s.vamp ? H('<span class="on-y">on</span> · the scene loops until you launch the next') : 'off'],
-        S.pv.loop === s.id ? ['Preview', H('<span class="on-y">looping this section</span>')] : null],
+        curLoop() === s.id ? [isLive() ? 'Live' : 'Preview', H('<span class="on-y">looping this section</span>')] : null],
       keys: ['double-click to rename', 'drag edges', '⌥-click split', 'P play · L loop'],
     });
   }
@@ -1325,7 +1493,7 @@ function uniqueLineupId(base) {
   while (S.song.lineups[id]) id = `${slugify(base)}-${n++}`;
   return id;
 }
-function selectLineup(id) { S.lineupId = id; pref.set('lineup:' + S.slug, id); S.highlight = null; render(); runValidate(); }
+function selectLineup(id) { S.lineupId = id; pref.set('lineup:' + S.slug, id); S.highlight = null; render(); runValidate(); lvSchedule(0); }
 
 async function newLineup() {
   const name = await promptDialog('New lineup', 'Name', 'Full band'); if (!name) return;
@@ -1466,14 +1634,16 @@ function onAct(act, el, ev) {
     }
     case 'sec-vamp': if (secById(S.selSec)) mutate(() => { const s = secById(S.selSec); s.vamp = !s.vamp; }); break;
     // preview
-    case 'pv-toggle': pvToggle(); break;
-    case 'pv-from': if (S.selSec) pvFromSection(S.selSec); break;
-    case 'pv-loop': pvLoop(S.pv.loop && !S.selSec ? S.pv.loop : S.selSec); break;
-    case 'pv-zero': PV.seek(0); if (PV.playing) pvPlay(0); else { drawPlayhead(); updateClock(); } break;
+    case 'pv-toggle': tpToggle(); break;
+    case 'pv-from': if (S.selSec) tpFrom(S.selSec); break;
+    case 'pv-loop': tpLoop(curLoop() && !S.selSec ? curLoop() : S.selSec); break;
+    case 'pv-zero': tpSeek(0); break;
+    case 'engine': setEngine(el.dataset.eng); break;
+    case 'lv-open': lvOpen(); break;
     case 'pv-mode': S.pv.mode = el.dataset.mode; pref.set('pv.mode', S.pv.mode); if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
     case 'pv-click': S.pv.click = !S.pv.click; pref.set('pv.click', S.pv.click); PV.setClick(S.pv.click); renderTransport(); break;
     case 'pv-cues': pvSetCues(!S.pv.cues); break;
-    case 'pv-clear': S.pv.solo.clear(); S.pv.mute.clear(); if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
+    case 'pv-clear': S.pv.solo.clear(); S.pv.mute.clear(); if (isLive()) lvMix(); else if (PV.playing) pvPlay(PV.pos()); renderMain(); break;
     case 'solo': pvSoloMute('solo', pid); break;
     case 'mute': pvSoloMute('mute', pid); break;
     // import
@@ -1607,8 +1777,8 @@ function sectionMenu(sid, x, y, atBeat) {
     { label: 'Merge with previous', disabled: i === 0, action: () => mergeSections(sid, -1) },
     { label: s.vamp ? 'Vamp: on' : 'Vamp: off', key: 'V', cur: !!s.vamp, action: () => mutate(() => { s.vamp = !s.vamp; }) },
     '-',
-    { label: 'Preview from here', key: 'P', action: () => pvFromSection(sid) },
-    { label: S.pv.loop === sid ? 'Stop looping' : 'Loop in preview', key: 'L', cur: S.pv.loop === sid, action: () => pvLoop(sid) },
+    { label: isLive() ? 'Play from here in Live' : 'Preview from here', key: 'P', action: () => tpFrom(sid) },
+    { label: curLoop() === sid ? 'Stop looping' : isLive() ? 'Loop in Live' : 'Loop in preview', key: 'L', cur: curLoop() === sid, action: () => tpLoop(sid) },
     '-',
     { label: 'Highlight in checks', action: () => highlight(null, sid) },
   ]);
@@ -1641,8 +1811,7 @@ function wire() {
     if (ev.target.closest('[data-act]')) return;
     const ru = ev.target.closest('#ruler');
     if (ru) {
-      const at = (beatAt(ru, ev.clientX) * spb());
-      if (PV.playing) pvPlay(at); else { PV.seek(at); drawPlayhead(); updateClock(); }
+      tpSeek(beatAt(ru, ev.clientX) * spb());
       return;
     }
     const sec = ev.target.closest('.sec');
@@ -1894,7 +2063,7 @@ function onKey(ev) {
   if (card && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); $('.chip', card).click(); return; }
   if (ev.key === 'Escape') { S.selSec = null; S.highlight = null; renderMain(); return; }
   if (S.view !== 'arrange') return;
-  if (ev.key === ' ' && !ev.target.closest?.('button, a')) { ev.preventDefault(); pvToggle(); return; }
+  if (ev.key === ' ' && !ev.target.closest?.('button, a')) { ev.preventDefault(); tpToggle(); return; }
   if (ev.key === 'Home') { ev.preventDefault(); onAct('pv-zero', document.body); return; }
   const secs = S.song.sections, i = secs.findIndex((s) => s.id === S.selSec);
   if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
@@ -1910,10 +2079,10 @@ function onKey(ev) {
   else if (k === 's') splitSection(S.selSec);
   else if (k === 'm') mergeSections(S.selSec, 1);
   else if (k === 'v') mutate(() => { const s = secById(S.selSec); s.vamp = !s.vamp; });
-  else if (k === 'p') pvFromSection(S.selSec);
-  else if (k === 'l') pvLoop(S.selSec);
+  else if (k === 'p') tpFrom(S.selSec);
+  else if (k === 'l') tpLoop(S.selSec);
 }
 
 window.lls = { S, PV, get TIP() { return TIP; } };  // console debugging handle
 wire();
-init();
+init().then(() => lvSchedule(0));
