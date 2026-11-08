@@ -22,8 +22,17 @@ def link(song_dir, export_dir, copy=True):
     files = sorted(f for f in os.listdir(export_dir) if f.lower().endswith(AUDIO))
     parts = {norm(p["name"]): p for p in song["parts"]}
     matched, extra, report = set(), [], []
+    from .ingest import is_silent_stem
     for f in files:
         n = norm(f)
+        if "fullmix" not in n and is_silent_stem(os.path.join(export_dir, f)):
+            # Logic exports a silent file when a track's sample/plugin is missing: keep the stem null so the
+            # builder plays the part's MIDI through a sample instead
+            key = n if n in parts else (n[len(title):] if n.startswith(title) and n[len(title):] in parts else None)
+            report.append((f, "silent export ignored (peak < -60 dBFS)" + (f"; part '{parts[key]['name']}' keeps no stem" if key else "")))
+            if key and parts[key].get("stem"): parts[key]["stem"] = None
+            if key: matched.add(key)
+            continue
         if "fullmix" in n or n == title or n.endswith("mix") and title in n:
             song["mix"] = _place(song_dir, export_dir, f, "mix", copy); report.append((f, "full mix")); continue
         key = n if n in parts else (n[len(title):] if n.startswith(title) and n[len(title):] in parts else None)

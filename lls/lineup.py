@@ -77,7 +77,18 @@ def drum_rack_source(part):
 def has_stem(song, part):
     stem = part.get("stem") or part.get("raw_stem")
     if not stem: return False
-    return not song.get("_dir") or os.path.exists(os.path.join(song["_dir"], stem))
+    if not song.get("_dir"): return True
+    p = os.path.join(song["_dir"], stem)
+    if not os.path.exists(p): return False
+    from .ingest import is_silent_stem  # lazy: pulls in numpy + the Logic parser
+    return not is_silent_stem(p)  # a silent export (peak < -60 dBFS) counts as missing
+
+
+def drum_standin_ok(part):
+    """A drum part that can play from MIDI through a Simpler sample (printed > factory > Core Library stand-in)
+    when it has no usable stem."""
+    from .drumrack import category
+    return part.get("kind") == "midi" and bool(part.get("midi")) and category(part) is not None
 
 
 def _notes(song, part):
@@ -220,7 +231,10 @@ def validate(song, band, lineup_id):
                     bad = [n[0] for n in _notes(song, part) if sec["start"] <= n[1] < sec["end"] and not rng[0] <= n[0] <= rng[1]]
                     if bad: add("warn", "range", f"{len(bad)} notes outside {rig_id}'s range {rng[0]}-{rng[1]}", pid, sid)
             elif t in ("backing-audio", "audio-loop"):
-                if not has_stem(song, part):
+                if not has_stem(song, part) and drum_standin_ok(part) and t == "backing-audio":
+                    add("warn", "standin-sample", f"no usable stem for '{part['name']}': plays its MIDI through a Simpler sample "
+                        "(factory sample, else a Core Library stand-in)", pid, sid)
+                elif not has_stem(song, part):
                     add("error", "no-stem", f"{t} needs a stem; export '{part['name']}' from Logic", pid, sid)
             elif t == "midi-clip":
                 if part.get("kind") != "midi":

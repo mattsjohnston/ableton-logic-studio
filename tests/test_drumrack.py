@@ -51,7 +51,7 @@ class Build(unittest.TestCase):
         info = []
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            t, gm = dr.make_drum_track(self.P, ids, self.song, SONG_DIR, project_dir=self.tmp, info=info)
+            t, gm = dr.make_drum_track(self.P, ids, self.song, SONG_DIR, project_dir=self.tmp, info=info, standin=False)
         ET.fromstring(ET.tostring(t))  # serialises
         self.assertEqual(gm, {"kick-1-flashback": 36, "kick-2-flashback": 35, "tom-low-flashback": 41, "snare-2-deep-end": 38})
         pads = {128 - int(b.find("BranchInfo/ReceivingNote").get("Value")): b for b in t.iter("DrumBranch")}
@@ -65,6 +65,18 @@ class Build(unittest.TestCase):
             self.assertTrue(os.path.isfile(os.path.join(self.tmp, rel)), rel)
         self.assertEqual(pads[38].findall(".//OriginalSimpler"), [])  # sample not installed -> empty pad
         self.assertTrue(any("Snare 2" in m for m in info))
+
+    def test_standin_pad(self):
+        from lls import standins
+        if not standins.find_standin("snare"): self.skipTest("no Core Library")
+        info, sources = [], {}
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            t, gm = dr.make_drum_track(self.P, ["snare-2-deep-end"], self.song, SONG_DIR, project_dir=self.tmp, info=info,
+                                       sources=sources, standin=True)
+        self.assertEqual(sources, {"snare-2-deep-end": "standin"})
+        self.assertEqual(len(t.findall(".//OriginalSimpler")), 1)
+        self.assertTrue(any(i.startswith("pad source: Snare 2 - Deep End: standin ") for i in info))
 
     def test_simpler_root(self):
         smp = dr.sample_for_part(next(p for p in self.song["parts"] if p["id"] == "kick-1-flashback"), self.song)

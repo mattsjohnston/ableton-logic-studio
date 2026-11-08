@@ -8,6 +8,7 @@
 - ✅ `link-stems`: 21/23 Logic stems linked; the duplicate "Light Harmonics" export was resolved by audio activity.
 - ⏳ Snare 2 stem (Logic's single-track export dies near the end) and the 4 aux reverb returns (exports come out silent or get deleted): GUI automation of Logic stopped as unreliable. These need the missing kits installed, then a manual export.
 - ⏳ Hi-Hat 1 + Snare 2 are **silent in Logic on this Mac** (kits not installed; Logic offers 12.7 GB of packs). The full-mix bounce lacks them too. Needs the user's choice: download here, or export on the original Mac.
+- 🧪 Stand-ins for the missing Logic samples: silent stems (peak < -60 dBFS) count as missing; Hi-Hat 1 / Snare 2 play their MIDI through a Simpler with an Ableton Core Library sample (`lls/standins.py`), flagged "⚠ stand-in sample" in the report. Not yet heard in Live.
 - ✅ Playback CPU: busiest section of the 4-piece set (3 Analog Lab AU, Drum Rack, 10 stems, click, cues) = **20–23 %** on Live's CPU meter (M3 Pro).
 
 ## Phase 2: UI + lineups
