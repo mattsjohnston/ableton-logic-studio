@@ -54,6 +54,27 @@ def _read_wav(path):
     return a[:, :2].astype(np.float32), sr
 
 
+SILENT_DBFS = -60.0  # a stem whose peak is below this counts as missing (Logic exports a silent file when a sample is absent)
+_peak_cache = {}
+
+
+def stem_peak_dbfs(path):
+    """Peak level (dBFS) of a WAV file, cached by (path, mtime, size). -inf for digital silence."""
+    st = os.stat(path)
+    key = (os.path.abspath(path), st.st_mtime_ns, st.st_size)
+    if key not in _peak_cache:
+        a, _ = _read_wav(path)
+        peak = float(np.abs(a).max()) if a.size else 0.0
+        _peak_cache[key] = 20 * np.log10(peak) if peak > 0 else float("-inf")
+    return _peak_cache[key]
+
+
+def is_silent_stem(path):
+    """True when the file's peak is below -60 dBFS. Unreadable files are not called silent (callers report those)."""
+    try: return stem_peak_dbfs(path) < SILENT_DBFS
+    except Exception: return False
+
+
 def write_wav(path, data, sr):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     pcm = (np.clip(data, -1, 1) * 8388607).astype(np.int32)

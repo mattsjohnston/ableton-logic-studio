@@ -136,6 +136,24 @@ def audio_info(path):
     raise ValueError(f"unsupported audio file {path}")
 
 
+def resolve_sample(part, song, song_dir, samples=None, sample_source="auto", standin=True):
+    """(path, source) for a drum part: printed one-shot > factory Quick Sampler file > Core Library stand-in.
+    source is "printed"|"factory"|"standin"|"none"; a stem that is silent/missing yields no printed one-shot."""
+    path, src = None, "none"
+    if sample_source in ("printed", "auto"):
+        from . import oneshot
+        r = oneshot.extract(song_dir, part, song)
+        if r: path, src = r[0], "printed"
+    if src == "none" and sample_source in ("factory", "auto"):
+        path = sample_for_part(part, song, samples)
+        if path and os.path.isfile(path): src = "factory"
+    if src == "none" and standin:
+        from . import standins
+        s = standins.standin_for_part(part)
+        if s: path, src = s, "standin"
+    return path, src
+
+
 # ---------------------------------------------------------------- prototypes
 class _Drum:
     """Cleaned prototypes: a single-pad DrumGroupDevice and a bare Simpler."""
@@ -227,7 +245,7 @@ def make_simpler_track(protos, sample_path, project_dir, name, color, root=60, o
 
 
 def make_drum_track(protos, part_ids, song, song_dir, project_dir=None, name="Drums", color=5, samples=None,
-                    notes=None, ids=None, info=None, sample_source="auto", sources=None):
+                    notes=None, ids=None, info=None, sample_source="auto", sources=None, standin=True):
     """MIDI track with a Drum Rack: one pad per part, receiving its GM note, holding a Simpler with the part's sample.
 
     Returns (track_element, {part_id: gm_note}); sequence the rack by remapping each part's clip notes with
@@ -239,7 +257,8 @@ def make_drum_track(protos, part_ids, song, song_dir, project_dir=None, name="Dr
     "factory" = the Quick Sampler file, "auto" (default) = printed when the part has a stem, else factory. Missing
     both = empty pad + message. The one-shot holds one velocity's dynamics, so Simpler velocity sensitivity is
     left untouched. The chosen source per pad is appended to `info` as "pad source: <name>: <src>" and stored in
-    the optional `sources` dict {part_id: "printed"|"factory"|"none"}."""
+    the optional `sources` dict {part_id: "printed"|"factory"|"standin"|"none"}. With `standin` (default) a part with
+    neither source gets an Ableton Core Library stand-in (lls.standins) and the line reads "pad source: <name>: standin <file>"."""
     if sample_source not in ("printed", "factory", "auto"): raise ValueError(f"bad sample_source {sample_source!r}")
     project_dir = project_dir or song_dir
     by_id = {p["id"]: p for p in song["parts"]}
@@ -255,22 +274,19 @@ def make_drum_track(protos, part_ids, song, song_dir, project_dir=None, name="Dr
         als.setv(b, "BranchInfo/ReceivingNote", 128 - gm[p["id"]]); als.setv(b, "BranchInfo/SendingNote", 60)  # Live stores pad note as 128 - MIDI note (demo: snare 38 -> 90)
         als.setv(b, "BranchInfo/ChokeGroup", 0)
         als.setv(b, "Color", 8 + idx % 14); als.setv(b, "AutoColored", False)
-        path, src = None, "none"
-        if sample_source in ("printed", "auto"):
-            from . import oneshot
-            r = oneshot.extract(song_dir, p, song)
-            if r: path, src = r[0], "printed"
-        if src == "none" and sample_source in ("factory", "auto"):
-            path = sample_for_part(p, song, samples)
-            if path and os.path.isfile(path): src = "factory"
+        path, src = resolve_sample(p, song, song_dir, samples, sample_source, standin)
         if src != "none":
             b.find("DeviceChain/MidiToAudioDeviceChain/Devices").append(_simpler(protos, path, project_dir, 60))
+            if src == "standin":
+                msg = f"{p['name']}: stand-in sample {os.path.basename(path)} (Logic sample not installed)"
+                if info is not None: info.append(msg)
         else:
             msg = f"{p['name']}: no {sample_source} sample ({path}); empty pad on GM note {gm[p['id']]}"
             warnings.warn(msg)
             if info is not None: info.append(msg)
         if sources is not None: sources[p["id"]] = src
-        if info is not None: info.append(f"pad source: {p['name']}: {src}")
+        if info is not None:
+            info.append(f"pad source: {p['name']}: {src}" + (f" {os.path.basename(path)}" if src == "standin" else ""))
         br.append(b)
     t = copy.deepcopy(protos.midi_track)
     devs = t.find("DeviceChain/DeviceChain/Devices"); als.clear(devs); devs.append(rack)

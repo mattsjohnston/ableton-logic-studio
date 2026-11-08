@@ -246,6 +246,26 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
                 st = add_track(a_proto, name + (" (stem)" if (M or L or D) else ""), COLORS["backing-audio"], clips)
                 send_plan.append((st, SD.sends_for_role(LU.role_hint(part))))
                 notes.append(f"{len(clips)} audio clips from {'exported' if part.get('stem') else 'RAW (no FX)'} stem")
+            elif LU.drum_standin_ok(part) and not LU.playable(part):
+                # drum part whose stem is missing/silent: MIDI through a Simpler (printed > factory > Core Library stand-in)
+                from . import drumrack
+                path, src = drumrack.resolve_sample(part, song, song_dir)
+                clips = midi_clips(part, A, COLORS["midi-clip"])
+                tinfo = []
+                proto = drumrack.make_simpler_track(P, path, proj, name, COLORS["midi-clip"],
+                                                    root=drumrack.main_pitch(song_dir, part), info=tinfo)
+                t = add_track(proto, name, COLORS["midi-clip"], clips)
+                als.set_monitoring(t, als.MONITOR_AUTO, armed=False)
+                label = {"printed": "printed one-shot", "factory": "Logic factory sample"}.get(src)
+                if src == "standin":
+                    notes.append(f"{len(clips)} MIDI clips → Simpler with {os.path.basename(path)} — ⚠ stand-in sample (Logic sample not installed)")
+                    problems.append({"level": "warn", "part": part["id"], "section": None, "code": "standin-sample",
+                                     "message": f"⚠ stand-in sample (Logic sample not installed): {os.path.basename(path)}"})
+                elif label:
+                    notes.append(f"{len(clips)} MIDI clips → Simpler with {label} (stem missing/silent)")
+                else:
+                    notes.append(f"⚠ {len(clips)} MIDI clips, no sample available ({'; '.join(tinfo)})")
+                A = []
             else:
                 M = sorted(M + A)  # Logic built-in with no exported stem yet: fall back to MIDI so nothing is lost
                 notes.append(f"NO STEM: {len(A)} backing sections fall back to MIDI clips")
