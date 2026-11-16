@@ -7,9 +7,7 @@ import numpy as np
 from lls import als, lineup as L
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SAMPLE = next((p for p in (os.path.join(REPO, "samples", "Thoughts For The Night.logicx"),
-                           "/Users/mattjohnston/Dev/Ableton Logic Studio/samples/Thoughts For The Night.logicx")
-               if os.path.isdir(p)), None)
+from tests.paths import SAMPLE, HAVE_SAMPLE
 
 AL = lambda preset: {"type": "analoglab", "preset": preset, "state": f"instruments/{preset}.aupreset"}
 ALCHEMY = {"type": "logic-builtin", "name": "Alchemy", "preset": None}
@@ -158,7 +156,7 @@ def _write_wav(path, seconds=1.0, sr=8000):
         w.setnchannels(2); w.setsampwidth(2); w.setframerate(sr); w.writeframes(a.tobytes())
 
 
-@unittest.skipUnless(SAMPLE, "sample project not present")
+@unittest.skipUnless(HAVE_SAMPLE, "sample project not present (samples/ or $LLS_SAMPLE_PROJECT)")
 class SampleSong(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

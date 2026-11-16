@@ -4,10 +4,11 @@ import gzip, os, tempfile, unittest, xml.etree.ElementTree as ET
 from lls.ingest import ingest
 from lls.build import build
 from lls import als
+from tests.paths import SAMPLE, HAVE_SAMPLE, HAVE_LIVE
 
-SAMPLE = "samples/Thoughts For The Night.logicx"
 
-@unittest.skipUnless(os.path.isdir(SAMPLE), "sample project not present")
+@unittest.skipUnless(HAVE_SAMPLE, "sample project not present (samples/ or $LLS_SAMPLE_PROJECT)")
+@unittest.skipUnless(HAVE_LIVE, "needs Ableton Live 12")
 class Smoke(unittest.TestCase):
     def test_ingest_and_build(self):
         with tempfile.TemporaryDirectory() as tmp:

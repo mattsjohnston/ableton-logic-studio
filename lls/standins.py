@@ -2,14 +2,16 @@
 
 find_standin(category) -> path of a Core Library one-shot (existing file) or None.
 Categories: kick, snare, clap, hat_closed, hat_open, tom, crash, ride, shaker, perc, fx.
-The Samples tree is indexed once into out/core_samples_index.json (override the tree with $LLS_CORE_SAMPLES).
+The Samples tree of the detected Live (lls.liveapp) is indexed once per tree into out/core_samples_index-<hash>.json
+(override the tree with $LLS_CORE_SAMPLES).
 Picks favour 80s / electronic character (synthwave): per-category regex preferences, then shorter name.
 """
-import json, os, re
+import hashlib, json, os, re
+
+from . import liveapp
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CORE_SAMPLES = "/Applications/Ableton Live 12 Beta.app/Contents/App-Resources/Core Library/Samples"
-INDEX_PATH = os.path.join(REPO, "out", "core_samples_index.json")
+CORE_SAMPLES = None   # override (tests); default: <detected Live's Core Library>/Samples
 CATEGORIES = ("kick", "snare", "clap", "hat_closed", "hat_open", "tom", "crash", "ride", "shaker", "perc", "fx")
 AUDIO = (".wav", ".aif", ".aiff")
 
@@ -35,7 +37,19 @@ _AVOID = re.compile(r"reverse|\brev\b|loop|\d+ ?bpm|riser|swell")
 
 
 def _tree():
-    return os.environ.get("LLS_CORE_SAMPLES") or CORE_SAMPLES
+    """The Core Library Samples folder to use, or None without a Live 12."""
+    t = os.environ.get("LLS_CORE_SAMPLES") or CORE_SAMPLES
+    if t: return t
+    try:
+        return os.path.join(liveapp.core_library(), "Samples")
+    except liveapp.LiveNotFound:
+        return None
+
+
+def index_path(tree=None):
+    """Cache file for a Samples tree: keyed by its path, so two Live installs (Suite + Beta) don't evict each other."""
+    tree = tree or _tree() or ""
+    return os.path.join(REPO, "out", f"core_samples_index-{hashlib.sha1(tree.encode()).hexdigest()[:10]}.json")
 
 
 def _classify(rel):
@@ -52,9 +66,10 @@ def _classify(rel):
     return _FOLDERS.get(folder)
 
 
-def build_index(tree=None, path=INDEX_PATH):
+def build_index(tree=None, path=None):
     """Walk the Samples tree and write {root, files: {category: [relative path, ...]}} to `path`."""
     tree = tree or _tree()
+    path = path or index_path(tree)
     files = {c: [] for c in CATEGORIES}
     for dp, _, fns in os.walk(tree):
         for fn in fns:
@@ -71,10 +86,11 @@ def build_index(tree=None, path=INDEX_PATH):
     return idx
 
 
-def load_index(path=INDEX_PATH):
+def load_index(path=None):
     """The cached index (built on first use, or when the tree location changed); None without a Core Library."""
     tree = _tree()
-    if not os.path.isdir(tree): return None
+    if not tree or not os.path.isdir(tree): return None
+    path = path or index_path(tree)
     try:
         with open(path) as f: idx = json.load(f)
         if idx.get("root") == tree: return idx

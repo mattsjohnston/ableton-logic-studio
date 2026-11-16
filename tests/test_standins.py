@@ -6,10 +6,9 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT)
 from lls import als, build, drumrack, ingest, lineup as LU, standins, stems
 
-SONG_DIR = os.path.join(ROOT, "songs", "thoughts-for-the-night")
-HAVE_CORE = os.path.isdir(standins.CORE_SAMPLES)
-HAVE_STEMS = os.path.isdir(os.path.join(SONG_DIR, "stems", "export"))
-HAVE_LIVE = os.path.exists(als.BASE)
+from tests.paths import SONG_DIR, HAVE_STEMS, live_path  # noqa: E402
+HAVE_CORE = bool(standins._tree() and os.path.isdir(standins._tree()))
+HAVE_LIVE = bool(live_path(als.base_path) and live_path(als.demo_path))
 
 
 @unittest.skipUnless(HAVE_CORE, "needs Ableton's Core Library")
@@ -29,7 +28,7 @@ class Finder(unittest.TestCase):
         self.assertIn("Hihat Closed", standins.standin_for_part({"id": "h", "name": "Hi-Hat 1 - LowTech Funk"}))
         self.assertIn("Snare", standins.standin_for_part({"id": "s", "name": "Snare 2 - Deep End"}))
         self.assertIsNone(standins.standin_for_part({"id": "b", "name": "Bass Line"}))
-        self.assertTrue(os.path.isfile(standins.INDEX_PATH))
+        self.assertTrue(os.path.isfile(standins.index_path()))
         with self.assertRaises(ValueError): standins.find_standin("nope")
 
 

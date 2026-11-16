@@ -158,7 +158,7 @@ def resolve_sample(part, song, song_dir, samples=None, sample_source="auto", sta
 class _Drum:
     """Cleaned prototypes: a single-pad DrumGroupDevice and a bare Simpler."""
     def __init__(self):
-        demo = als.load_gz(als.DEMO)
+        demo = als.load_gz(als.demo_path())
         dgd = copy.deepcopy(next(demo.iter("DrumGroupDevice")))
         br = dgd.find("Branches")
         self.branch = copy.deepcopy(br[0])

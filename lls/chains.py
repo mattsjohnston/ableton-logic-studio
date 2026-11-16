@@ -11,7 +11,14 @@ import copy, os
 
 from . import als
 
-FX = f"{als.CORE}/Devices/Audio Effects"
+FX = None  # override (tests); default: <detected Live's Core Library>/Devices/Audio Effects
+
+
+def fx_dir():
+    if FX: return FX
+    from . import liveapp
+    return os.path.join(liveapp.core_library(), "Devices", "Audio Effects")
+
 FX_MODES = ("default", "none")
 
 # (preset path under FX, {xpath: Manual value}) per device
@@ -29,7 +36,7 @@ LABEL = {"Eq8": "EQ Eight", "Compressor2": "Compressor", "Amp": "Amp", "Cabinet"
 
 def load_preset(rel):
     """Device element from a Core Library .adv preset, or None if the file is missing."""
-    p = os.path.join(FX, rel)
+    p = os.path.join(fx_dir(), rel)
     if not os.path.exists(p): return None
     return copy.deepcopy(als.load_gz(p)[0])
 
@@ -37,7 +44,7 @@ def load_preset(rel):
 def _demo_device(protos, tag):
     cache = protos.__dict__.setdefault("_demo_devices", {})
     if tag not in cache:
-        cache[tag] = next(als.load_gz(als.DEMO).iter(tag), None)
+        cache[tag] = next(als.load_gz(als.demo_path()).iter(tag), None)
     return copy.deepcopy(cache[tag]) if cache[tag] is not None else None
 
 

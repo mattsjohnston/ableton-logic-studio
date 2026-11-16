@@ -13,6 +13,7 @@ from lls import als, live_engine as LE, live_osc  # noqa: E402
 from lls import lineup as LU  # noqa: E402
 from lls.ui import server  # noqa: E402
 from tests.synth import make_song  # noqa: E402
+from tests.paths import HAVE_LIVE  # noqa: E402
 
 
 def free_port():
@@ -85,6 +86,7 @@ def setup_song(root):
 
 class Names(unittest.TestCase):
     """expected_scenes / expected_tracks must match what lls.build actually writes."""
+    @unittest.skipUnless(HAVE_LIVE, "needs Ableton Live 12 (builds copy Live's template)")
     def test_names_match_a_real_build(self):
         from lls.build import build
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +251,7 @@ class Api(unittest.TestCase):
         st, r = self.req("POST", "/api/live/mix", {"tracks": {"Click": {"mute": True}}})
         self.assertEqual((st, self.fake.mute.get(idx["Click"])), (200, 1))
 
+    @unittest.skipUnless(HAVE_LIVE, "needs Ableton Live 12 (builds copy Live's template)")
     def test_open_builds_and_waits(self):
         st, r = self.req("POST", "/api/live/open", {"slug": "tiny-song", "lineup_id": "live"})
         self.assertEqual((st, r["state"]), (200, "loaded"))  # matching names alone don't count: we open our newest build

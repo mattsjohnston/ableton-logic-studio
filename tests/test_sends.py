@@ -3,6 +3,7 @@ import gzip, json, os, shutil, tempfile, unittest, xml.etree.ElementTree as ET
 from lls import als, sends as SD
 from lls.build import build
 from tests.synth import make_song
+from tests.paths import HAVE_LIVE
 
 
 def load(out):
@@ -17,6 +18,7 @@ def send_vals(t):
     return [float(h.find("Send/Manual").get("Value")) for h in t.find("DeviceChain/Mixer/Sends")]
 
 
+@unittest.skipUnless(HAVE_LIVE, "needs Ableton Live 12 (builds copy Live's template)")
 class Sends(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
