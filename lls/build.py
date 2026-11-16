@@ -165,7 +165,7 @@ def build(song_dir, lineup="default", out_root="out/sets", band_path=None, cues=
     import time as _time
     out_als = os.path.join(proj, f"{title} {_time.strftime('%m%d-%H%M%S')}.als" if versioned else f"{title}.als")
 
-    root = als.load_gz(als.BASE); ls = root.find("LiveSet")
+    root = als.load_gz(als.base_path()); ls = root.find("LiveSet")
     root.set("Creator", "Ableton Logic Studio")
     ids, P = als.Ids(root), als.Protos()
     tracks = ls.find("Tracks")

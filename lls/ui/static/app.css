@@ -431,3 +431,10 @@ a.btn { text-decoration: none; }
 .pv-cues input[type=range] { width: 60px; }
 .ptog.stale { border-style: dashed; }
 .pv-status .syn { color: var(--accent3); }
+
+/* ---------- setup banner (GET /api/doctor: something critical missing on this Mac) ---------- */
+.doctor-banner { flex: none; display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; color: var(--text);
+  background: color-mix(in srgb, var(--err) 12%, var(--bg2)); border-bottom: 1px solid color-mix(in srgb, var(--err) 45%, transparent); }
+.doctor-banner .grow { flex: 1; min-width: 0; }
+.doctor-banner ul { margin: 4px 0; padding-left: 18px; }
+.doctor-banner li { margin: 2px 0; overflow-wrap: anywhere; }

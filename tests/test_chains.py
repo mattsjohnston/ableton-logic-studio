@@ -7,7 +7,8 @@ import numpy as np
 from lls import als, chains
 from lls.build import build
 
-HAVE_LIVE = os.path.exists(als.DEMO) and os.path.isdir(chains.FX)
+from tests.paths import live_path
+HAVE_LIVE = bool(live_path(als.demo_path) and live_path(chains.fx_dir))
 BAND = {"schema": 1, "interface": {"outputs": {"main": [1, 2], "click": [3, 4]}}, "performers": [
     {"id": "ann", "name": "Ann", "roles": ["vocal"], "rigs": [{"id": "ann-vox", "kind": "vocal", "audio_input": 1}]},
     {"id": "bob", "name": "Bob", "roles": ["bass"], "rigs": [{"id": "bob-di", "kind": "bass", "audio_input": 2}]},
@@ -95,7 +96,7 @@ class Chains(unittest.TestCase):
         with self.assertRaises(ValueError): self._build("wobble")
 
     def test_fallback_when_presets_missing(self):
-        real = chains.FX
+        real = chains.FX  # None: the detected Live's Core Library
         chains.FX = "/nonexistent"
         try:
             self.assertEqual([d.tag for d in chains.vocal_chain(als.Protos())], ["Eq8", "Compressor2", "Compressor2"])

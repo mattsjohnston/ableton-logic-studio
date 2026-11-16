@@ -5,6 +5,7 @@ from lls import als
 from lls.build import build, cues_wav, _speak
 from lls.ingest import _read_wav
 from tests.synth import make_song, SR, tone
+from tests.paths import HAVE_LIVE
 
 SECTIONS = [{"id": "s1", "name": "Verse", "start": 0.0, "end": 8.0},
             {"id": "s2", "name": "Chorus", "start": 8.0, "end": 16.0, "vamp": True},
@@ -25,6 +26,7 @@ def track(root, name):
     return next(t for t in root.find("LiveSet/Tracks") if t.find("Name/EffectiveName").get("Value") == name)
 
 
+@unittest.skipUnless(HAVE_LIVE, "needs Ableton Live 12 (builds copy Live's template)")
 class CuesAndFollow(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

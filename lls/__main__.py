@@ -5,8 +5,11 @@
        python -m lls oneshots <song_dir>
        python -m lls link-stems <song_dir> <logic_export_dir>
        python -m lls setlist build <setlists/name.json> [--no-fallback] [--no-m4a]
+       python -m lls package export <song_dir> [out.llsong]
+       python -m lls package import <file.llsong> [--slug x] [--force] [--root .]
+       python -m lls doctor
        python -m lls ui [--port 8765] [--root .]"""
-import json, sys
+import json, os, sys
 
 
 def _opt(argv, name):
@@ -73,6 +76,24 @@ def main(argv):
         print(f"{argv[3]}: {errors} errors, {len(problems) - errors} warnings")
         _print_problems(problems)
         sys.exit(1 if errors else 0)
+    elif len(argv) >= 3 and argv[:2] == ["package", "export"]:
+        from . import package
+        out, m = package.export(argv[2], argv[3] if len(argv) > 3 else None)
+        size = os.path.getsize(out) / 1e6
+        print(f"{m['title']}: {len(m['files'])} files, {size:.1f} MB -> {out}")
+    elif len(argv) >= 3 and argv[:2] == ["package", "import"]:
+        from . import package
+        slug, root = _opt(argv, "--slug"), _opt(argv, "--root") or "."
+        force = "--force" in argv
+        try:
+            r = package.import_package(argv[2], os.path.join(root, "songs"), slug=slug, force=force)
+        except package.PackageError as e:
+            print(f"error: {e}", file=sys.stderr); sys.exit(1)
+        print(f"{r['title']}: {r['files']} files -> {r['song_dir']}" + (" (replaced)" if r["replaced"] else ""))
+        print(f"  lineups: {', '.join(r['lineups']) or '(none)'}" + (f"  (kept from the old copy: {', '.join(r['kept_lineups'])})" if r["kept_lineups"] else ""))
+    elif argv[:1] == ["doctor"]:
+        from . import doctor
+        sys.exit(doctor.main(argv[1:]))
     elif argv[:1] == ["ui"]:
         from .ui.server import main as ui_main
         ui_main(argv[1:])

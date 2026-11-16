@@ -35,6 +35,12 @@
 - ✅ Scene auto-advance verified in Live: Intro (4 bars) moved on to Break 1 by itself (FollowActionA=4 = Next, FollowTime in beats).
 - ✅ UI "Engine: Live": transport drives Live via AbletonOSC (fire/loop/stop sections, playhead follows Live, S/M mutes Live tracks). AbletonOSC is bound to 127.0.0.1, which takes effect after the next Live restart.
 
+## Portability (show laptop = bandmate's Mac)
+- 🧪 Live auto-detection (`lls/liveapp.py`): Suite first, then newest Live 12; `$LIVE_APP` overrides; schema-age warning; demo set found under any edition name. On this Mac it picks *Ableton Live 12 Beta* 12.4.25b1 (schema 12.0_12402). Not yet tried on a real Suite/Standard release install.
+- 🧪 Analog Lab AU template no longer points at our user's preset cache (FileRefs emptied). Not yet re-opened in Live.
+- 🧪 Song packages (`.llsong`, `python -m lls package export|import`, UI song picker): Thoughts round-trips (57 files, 2.1 GB) in a few seconds.
+- 🧪 `python -m lls doctor` + UI banner (`GET /api/doctor`).
+
 ## Needs Matt
 1. Wake/unlock the Mac so the GUI checks and Logic exports can finish.
 2. Drum kits: download the Logic packs here (12.7 GB) **or** export Hi-Hat 1, Snare 2 and the full mix on the original Mac.

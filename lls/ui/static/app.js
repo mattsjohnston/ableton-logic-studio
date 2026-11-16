@@ -313,7 +313,10 @@ function renderTop() {
   ss.innerHTML = (S.song ? '' : '<option value="" selected disabled>No song</option>')
     + S.songs.map((s) => `<option value="${esc(s.slug)}" ${s.slug === S.slug ? 'selected' : ''}>${esc(s.title)}</option>`).join('')
     + '<option disabled>──────────</option><option value="__new">+ New song…</option>'
-    + (S.song ? `<option value="__reimport">↻ Re-import / Link stems…</option>` : '');
+    + (S.song ? `<option value="__reimport">↻ Re-import / Link stems…</option>` : '')
+    + '<option disabled>──────────</option>'
+    + (S.song ? '<option value="__pkg_export">⇪ Export song package…</option>' : '')
+    + '<option value="__pkg_import">⇩ Import song package…</option>';
   const ls = $('#lineup-select');
   ls.innerHTML = S.song ? Object.entries(S.song.lineups).map(([id, lu]) =>
     `<option value="${esc(id)}" ${id === S.lineupId ? 'selected' : ''}>${esc(lu.name || id)}</option>`).join('') : '';
@@ -1159,6 +1162,71 @@ function importResultHtml(r) {
   </section>`;
 }
 
+// ---------- Song packages (.llsong: move a song to another Mac; lls/package.py)
+function waitJob(id) {
+  return new Promise((resolve, reject) => {
+    let since = 0;
+    const tick = async () => {
+      try {
+        const j = await api('GET', `/jobs/${id}?since=${since}`);
+        since = j.next;
+        if (j.state === 'running') { setTimeout(tick, 500); return; }
+        if (j.state === 'done') resolve(j.result); else reject(new Error(j.error || 'job failed'));
+      } catch (e) { reject(e); }
+    };
+    tick();
+  });
+}
+
+async function exportPackage() {
+  if (!S.song) return;
+  if (dirty()) { await save(); if (dirty()) return; }
+  try {
+    const r = await api('POST', `/songs/${S.slug}/package`, { reveal: true });
+    toast(`Packing “${S.song.title}”… (stems can take a minute)`);
+    const res = await waitJob(r.job);
+    toast(`Saved ${baseName(res.path)} (${(res.size / 1e6).toFixed(0)} MB) to Downloads`);
+  } catch (e) { toast('Export failed: ' + e.message, true); }
+}
+
+async function importPackage() {
+  let pick;
+  try { pick = await api('POST', '/pick', { kind: 'llsong' }); } catch (e) { toast(e.message, true); return; }
+  if (pick.cancelled) return;
+  const start = (force) => api('POST', '/package/import', { path: pick.path, force });
+  let r;
+  try { r = await start(false); } catch (e) {
+    if (e.status !== 409 || !/already exists/.test(e.message)) { toast(e.message, true); return; }
+    const ok = await confirmDialog('Replace song?', `${e.message}. Replace it with the package? Lineups that only exist here are kept.`, 'Replace');
+    if (!ok) return;
+    if (S.slug && dirty()) { await save(); if (dirty()) return; }
+    try { r = await start(true); } catch (e2) { toast(e2.message, true); return; }
+  }
+  try {
+    toast('Checking and unpacking the package…');
+    const res = await waitJob(r.job);
+    await refreshSongs(); await loadSong(res.slug);
+    toast(`${res.title}: imported${res.kept_lineups?.length ? ` (kept lineups: ${res.kept_lineups.join(', ')})` : ''}`);
+  } catch (e) { toast('Import failed: ' + e.message, true); }
+}
+
+// ---------- Setup check (GET /api/doctor): banner when something critical is missing
+async function checkSetup() {
+  let r;
+  try { r = await api('GET', '/doctor'); } catch { return; }
+  document.querySelector('.doctor-banner')?.remove();
+  if (r.ok) return;
+  const bad = r.checks.filter((c) => c.critical && !c.ok);
+  const el = document.createElement('div');
+  el.className = 'doctor-banner'; el.setAttribute('role', 'alert');
+  el.innerHTML = `<div class="grow"><b>Setup incomplete: building sets won't work on this Mac yet.</b>
+    <ul>${bad.map((c) => `<li><b>${esc(c.label)}</b>${c.detail ? ` · <span class="hint">${esc(c.detail)}</span>` : ''}${c.fix ? `<div>Fix: ${esc(c.fix)}</div>` : ''}</li>`).join('')}</ul>
+    <span class="hint">Full checklist: <code>python -m lls doctor</code></span></div>
+    <button class="btn icon" aria-label="Dismiss">✕</button>`;
+  el.querySelector('button').addEventListener('click', () => el.remove());
+  document.querySelector('header.top').after(el);
+}
+
 async function pickPath(kind) {
   try {
     const r = await api('POST', '/pick', { kind });
@@ -1955,6 +2023,7 @@ function wire() {
   $('#song-select').addEventListener('change', async (ev) => {
     const v = ev.target.value;
     if (v === '__new' || v === '__reimport') { ev.target.value = S.slug || ''; openImport(v === '__new' ? 'new' : 're'); return; }
+    if (v === '__pkg_export' || v === '__pkg_import') { ev.target.value = S.slug || ''; (v === '__pkg_export' ? exportPackage : importPackage)(); return; }
     if (dirty() && !(await confirmDialog('Unsaved changes', `Discard unsaved changes to “${S.song.title}”?`, 'Discard'))) { ev.target.value = S.slug; return; }
     await loadSong(v);
     if (!SONG_VIEWS.has(S.view) && S.view !== 'setlists') setView('arrange');
@@ -2086,3 +2155,4 @@ function onKey(ev) {
 window.lls = { S, PV, get TIP() { return TIP; } };  // console debugging handle
 wire();
 init().then(() => lvSchedule(0));
+checkSetup();

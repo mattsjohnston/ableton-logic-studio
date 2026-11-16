@@ -8,7 +8,7 @@ import copy, json, os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from lls import als, drumrack as dr
 
-MAIN = os.environ.get("LLS_MAIN", "/Users/mattjohnston/Dev/Ableton Logic Studio")
+MAIN = os.environ.get("LLS_MAIN", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 LOGICX = f"{MAIN}/samples/Thoughts For The Night.logicx"
 SONG = "songs/thoughts-for-the-night"
 OUT = "out/drumrack-demo/Drum Demo Project/Drum Demo.als"

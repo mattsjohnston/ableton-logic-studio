@@ -5,12 +5,39 @@ ID rules: global pointee IDs (tags ending 'Target', 'ControllerTargets.N', 'Poin
 """
 import binascii, copy, gzip, os, wave, xml.etree.ElementTree as ET
 
-LIVE = os.environ.get("LIVE_APP", "/Applications/Ableton Live 12 Beta.app")
-CORE = f"{LIVE}/Contents/App-Resources/Core Library"
-BASE = f"{CORE}/Templates/8-Track Template.als"
-DEMO = f"{CORE}/Lessons/Demo Songs/Chuck Sutton - Patience (Live 12 Suite Demo).als"
+from . import liveapp
+
 HERE = os.path.dirname(__file__)
 AU_TRACK = os.path.join(HERE, "templates", "analoglab_au_track.xml")
+
+
+# LIVE / CORE / BASE / DEMO resolve lazily from the detected Live 12 (lls.liveapp), so importing lls works without Live.
+def base_path():
+    """Live's own empty set (Core Library 8-Track Template), the root every build starts from."""
+    app = liveapp.find_live(); liveapp.warn_if_old()
+    p = app.base_template()
+    if not os.path.isfile(p):
+        raise FileNotFoundError(f"{app.describe()}: Core Library template missing ({p}). Reinstall Live or its Core Library.")
+    return p
+
+
+def demo_path():
+    """The Patience demo set (any edition's variant), source of our clip/track/device prototypes."""
+    app = liveapp.find_live(); liveapp.warn_if_old()
+    p = app.demo_song()
+    if not p:
+        raise FileNotFoundError(f"{app.describe()}: no 'Chuck Sutton - Patience (Live 12 ... Demo).als' in "
+                                f"{os.path.join(app.core_library, 'Lessons', 'Demo Songs')}. lls copies clip and device "
+                                "prototypes from it: reinstall Live 12 (Suite or Standard) with its Core Library.")
+    return p
+
+
+def __getattr__(name):
+    if name == "LIVE": return liveapp.find_live().path
+    if name == "CORE": return liveapp.find_live().core_library
+    if name == "BASE": return base_path()
+    if name == "DEMO": return demo_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def load_gz(p):
@@ -43,7 +70,7 @@ class Ids:
 class Protos:
     """Prototype elements copied from Live-saved sets."""
     def __init__(self):
-        demo = load_gz(DEMO)
+        demo = load_gz(demo_path())
         slot = lambda kind: next(s.find(f"ClipSlot/Value/{kind}") for s in demo.iter("ClipSlot")
                                  if s.find(f"ClipSlot/Value/{kind}") is not None)
         self.audio_clip, self.midi_clip = slot("AudioClip"), slot("MidiClip")

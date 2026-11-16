@@ -13,7 +13,7 @@ import lls.ingest, lls.setlist, lls.stems  # noqa: E402,F401  (so mock.patch can
 from tests.synth import make_song  # noqa: E402
 
 SLUG = "thoughts-for-the-night"
-SAMPLE = "/Users/mattjohnston/Dev/Ableton Logic Studio/samples/Thoughts For The Night.logicx"
+from tests.paths import SAMPLE, HAVE_SAMPLE  # noqa: E402
 
 
 def stub_lineup():
@@ -354,7 +354,7 @@ class UiServer(unittest.TestCase):
             j = self.wait_job(self.req("POST", "/api/import", {"logicx": orig, "slug": "broken"})[1]["job"])
         self.assertEqual(j["state"], "error"); self.assertIn("not a Logic project", j["error"]); self.assertIn("reading…", j["all_lines"])
 
-    @unittest.skipUnless(os.path.isdir(SAMPLE), "sample project not present")
+    @unittest.skipUnless(HAVE_SAMPLE, "sample project not present (samples/ or $LLS_SAMPLE_PROJECT)")
     def test_import_real_sample_into_temp_root(self):
         st, r = self.req("POST", "/api/import", {"logicx": SAMPLE, "slug": "thoughts-copy"})
         j = self.wait_job(r["job"])

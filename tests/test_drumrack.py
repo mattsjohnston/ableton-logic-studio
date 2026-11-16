@@ -6,9 +6,8 @@ sys.path.insert(0, ROOT)
 from lls import als, drumrack as dr
 
 SONG_DIR = os.path.join(ROOT, "songs", "thoughts-for-the-night")
-HAVE_LIVE = os.path.exists(als.DEMO)
-MAIN = os.environ.get("LLS_MAIN", "/Users/mattjohnston/Dev/Ableton Logic Studio")
-LOGICX = f"{MAIN}/samples/Thoughts For The Night.logicx"
+from tests.paths import SAMPLE as LOGICX, live_path  # noqa: E402
+HAVE_LIVE = bool(live_path(als.demo_path))
 
 
 class Classify(unittest.TestCase):

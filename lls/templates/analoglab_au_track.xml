@@ -11182,9 +11182,9 @@
 									<Value>
 										<FilePresetRef Id="1">
 											<FileRef>
-												<RelativePathType Value="1" />
-												<RelativePath Value="../../../../../Library/Caches/Ableton/Presets/AudioUnits/Arturia/Analog Lab V/Default.aupreset" />
-												<Path Value="/Users/mattjohnston/Library/Caches/Ableton/Presets/AudioUnits/Arturia/Analog Lab V/Default.aupreset" />
+												<RelativePathType Value="0" />
+												<RelativePath Value="" />
+												<Path Value="" />
 												<Type Value="2" />
 												<LivePackName Value="" />
 												<LivePackId Value="" />
@@ -12706,9 +12706,9 @@
 												<PresetRef>
 													<FilePresetRef Id="0">
 														<FileRef>
-															<RelativePathType Value="1" />
-															<RelativePath Value="../../../../../Library/Caches/Ableton/Presets/AudioUnits/Arturia/Analog Lab V/Default.aupreset" />
-															<Path Value="/Users/mattjohnston/Library/Caches/Ableton/Presets/AudioUnits/Arturia/Analog Lab V/Default.aupreset" />
+															<RelativePathType Value="0" />
+															<RelativePath Value="" />
+															<Path Value="" />
 															<Type Value="2" />
 															<LivePackName Value="" />
 															<LivePackId Value="" />

@@ -2,7 +2,7 @@ import json, os, shutil, tempfile, unittest
 from lls import setlist
 from tests.synth import make_song
 
-SAMPLE = next((p for p in ("samples/Thoughts For The Night.logicx", "/Users/mattjohnston/Dev/Ableton Logic Studio/samples/Thoughts For The Night.logicx") if os.path.isdir(p)), "samples/missing")
+from tests.paths import SAMPLE, HAVE_SAMPLE, HAVE_LIVE
 
 
 class Setlist(unittest.TestCase):
@@ -21,6 +21,7 @@ class Setlist(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
+    @unittest.skipUnless(HAVE_LIVE, "needs Ableton Live 12 (builds copy Live's template)")
     def test_build(self):
         r = setlist.build_setlist(self.sl, out_root=os.path.join(self.tmp, "out"), m4a=False)
         names = sorted(os.listdir(r["dir"]))
@@ -45,7 +46,7 @@ class Setlist(unittest.TestCase):
         json.dump({"name": "x", "songs": []}, open(self.sl, "w"))
         with self.assertRaises(ValueError): setlist.load(self.sl)
 
-    @unittest.skipUnless(os.path.isdir(SAMPLE), "sample project not present")
+    @unittest.skipUnless(HAVE_SAMPLE, "sample project not present (samples/ or $LLS_SAMPLE_PROJECT)")
     def test_sample_song(self):
         from lls.ingest import ingest
         shutil.rmtree(os.path.join(self.tmp, "songs", "second"))
