@@ -1,0 +1,3 @@
+logic2ableton==2.5.1
+numpy
+python-osc
