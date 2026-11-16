@@ -29,6 +29,12 @@ API (all JSON):
   POST /api/setlists/<slug>/build         -> {job}   (lls.setlist.build_setlist into out/setlists/)
   GET  /api/setlists/<slug>/running-order -> the built running-order.html
   POST /api/reveal                        <- {path}  (open -R; only paths under the root)
+  GET  /api/doctor                        -> lls.doctor.report(): {ok, critical_missing, checks: [{id, label, ok, critical, detail, fix}]}
+  POST /api/songs/<slug>/package          <- {reveal?} -> {job}; result {path, size, files}: songs/<slug> as a .llsong in
+                                             ~/Downloads (lls.package.export), revealed in Finder when reveal is true
+  POST /api/package/import                <- {path, slug?, force?} -> {job} | 409 {exists: true} when the song exists and
+                                             force is false; result: lls.package.import_package (lineups kept)
+  POST /api/pick  kind=llsong             native dialog for a .llsong file
 Live engine (AbletonOSC, lls.live_engine; the OSC reply port is bound on first use, one process at a time):
   GET  /api/live/status?slug=&lineup=     -> {connected, tempo, playing, song_beat, scene, fired, offset, scenes, tracks,
                                               loaded: {slug, title, lineup} | null, song: {scenes_match, lineup_match,
@@ -52,7 +58,7 @@ SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 TREATMENTS = {"live-vocal", "backing-audio", "audio-loop", "midi-clip", "live-midi", "live-looped",
               "live-drums", "live-guitar", "click", "dropped"}
 RIG_KINDS = {"keys", "drums", "guitar", "bass", "vocal", "grid"}
-LIVE_APP = "Ableton Live 12 Beta"
+# The Live app for `open -a` comes from lls.liveapp.find_live() (Suite preferred, newest version; $LIVE_APP overrides).
 MAX_BODY = 8 * 1024 * 1024
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
         ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json",
@@ -462,7 +468,8 @@ _live_cache, _live_cache_lock = {}, threading.Lock()   # (song dir, song.json mt
 class Handler(BaseHTTPRequestHandler):
     server_version = "lls-ui/1"
     root = "."                      # repo root (songs/, band.json, out/)
-    open_cmd = ["open", "-a", LIVE_APP]
+    open_cmd = None                 # None -> ["open", "-a", <detected Live 12 app>]; tests inject one
+    downloads_dir = os.path.expanduser("~/Downloads")   # where song packages are exported
     reveal_cmd = ["open", "-R"]
     osascript = ["osascript"]
     jobs = None                     # Jobs(), one per server
@@ -611,6 +618,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_midi(d, read_json(sp), seg[3])
             if len(seg) == 3 and seg[2] == "cues.wav" and method in ("GET", "HEAD", "POST"):
                 return self.api_cues(d, sp, method)
+            if len(seg) == 3 and seg[2] == "package" and method == "POST":
+                return self.api_package_export(d, self.body())
         if seg == ["jobs"] and method == "GET":
             return self.send_json(200, [j.view(len(j.lines)) for j in self.jobs.all.values()])
         if seg[:1] == ["jobs"] and len(seg) == 2 and method == "GET":
@@ -620,6 +629,9 @@ class Handler(BaseHTTPRequestHandler):
         if seg == ["import"] and method == "POST": return self.api_import(self.body())
         if seg == ["pick"] and method == "POST": return self.api_pick(self.body())
         if seg == ["reveal"] and method == "POST": return self.api_reveal(self.body())
+        if seg == ["doctor"] and method == "GET":
+            return self.send_json(200, importlib.import_module("lls.doctor").report())
+        if seg == ["package", "import"] and method == "POST": return self.api_package_import(self.body())
         if seg == ["setlists"] and method == "GET": return self.send_json(200, self.list_setlists())
         if seg[:1] == ["setlists"] and len(seg) >= 2:
             return self.api_setlist(method, seg[1], seg[2:])
@@ -711,6 +723,14 @@ class Handler(BaseHTTPRequestHandler):
                 with open(p, encoding="utf-8") as f: acc = f.read()
         return als, report, acc
 
+    def live_open_cmd(self):
+        if self.open_cmd: return list(self.open_cmd)
+        from lls import liveapp
+        try:
+            return ["open", "-a", liveapp.find_live().path]
+        except liveapp.LiveNotFound as e:
+            raise ApiError(503, str(e))
+
     def api_open(self, body):
         als = body.get("als")
         if not isinstance(als, str) or not als.endswith(".als"): raise ApiError(400, "als must be a path to a .als file")
@@ -718,7 +738,7 @@ class Handler(BaseHTTPRequestHandler):
         root = os.path.realpath(self.out_root)
         if not full.startswith(root + os.sep): raise ApiError(403, "only sets built under out/sets can be opened")
         if not os.path.isfile(full): raise ApiError(404, "set not found (build it first)")
-        subprocess.Popen(list(self.open_cmd) + [full], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(self.live_open_cmd() + [full], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return self.send_json(200, {"ok": True, "opened": full})
 
     # ---- Live engine (AbletonOSC; lls.live_engine) ----
@@ -858,7 +878,7 @@ class Handler(BaseHTTPRequestHandler):
             built = not os.path.isfile(als) or os.path.getmtime(als) < newest
             if built: als = self._build(info["dir"], lid)[0] or als
             if not os.path.isfile(als): raise ApiError(500, f"build did not produce {als}")
-            subprocess.Popen(list(self.open_cmd) + [als], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(self.live_open_cmd() + [als], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if not hasattr(type(self), "_last_opened"): type(self)._last_opened = {}
             type(self)._last_opened[(body.get("slug"), lid)] = als
             end = time.time() + self.live_open_timeout
@@ -925,10 +945,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def api_pick(self, body):
         kind = body.get("kind")
-        prompts = {"logicx": "Choose a Logic project (.logicx)", "folder": "Choose the folder with Logic's exported stems"}
-        if kind not in prompts: raise ApiError(400, "kind must be logicx or folder")
+        prompts = {"logicx": "Choose a Logic project (.logicx)", "folder": "Choose the folder with Logic's exported stems",
+                   "llsong": "Choose a song package (.llsong)"}
+        if kind not in prompts: raise ApiError(400, "kind must be logicx, folder or llsong")
         if kind == "folder":
             tries = [f'POSIX path of (choose folder with prompt "{prompts[kind]}")']
+        elif kind == "llsong":
+            tries = [f'POSIX path of (choose file of type {{"llsong"}} with prompt "{prompts[kind]}")',
+                     f'POSIX path of (choose file with prompt "{prompts[kind]}")']
         else:  # .logicx is a package: typed choose file first, then untyped choose file / choose folder
             tries = [f'POSIX path of (choose file of type {{"com.apple.logic-project", "public.folder"}} with prompt "{prompts[kind]}")',
                      f'POSIX path of (choose file with prompt "{prompts[kind]}")',
@@ -940,6 +964,8 @@ class Handler(BaseHTTPRequestHandler):
                 path = out.rstrip("/") if out != "/" else out
                 if kind == "logicx" and not path.lower().endswith(".logicx"):
                     raise ApiError(400, f"not a Logic project (.logicx): {path}")
+                if kind == "llsong" and not path.lower().endswith(".llsong"):
+                    raise ApiError(400, f"not a song package (.llsong): {path}")
                 return self.send_json(200, {"path": path})
             if "-128" in err or "User canceled" in err: return self.send_json(200, {"cancelled": True})
         raise ApiError(500, f"file dialog failed: {err or 'no path returned'}")
@@ -953,6 +979,51 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.exists(full): raise ApiError(404, "path not found")
         subprocess.Popen(list(self.reveal_cmd) + [full], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return self.send_json(200, {"ok": True, "revealed": full})
+
+    # ---- song packages (lls.package) ----
+    def api_package_export(self, d, body):
+        slug, out_dir, reveal = os.path.basename(d), self.downloads_dir, bool(body.get("reveal"))
+        reveal_cmd = list(self.reveal_cmd)
+
+        def run(job):
+            P = importlib.import_module("lls.package")
+            job.set_step(f"Packing songs/{slug} (song.json, MIDI, instruments, stems)")
+            os.makedirs(out_dir, exist_ok=True)
+            path, m = P.export(d, os.path.join(out_dir, slug + P.EXT), log=job.log)
+            size = os.path.getsize(path)
+            job.log(f"{len(m['files'])} files, {size / 1e6:.1f} MB -> {path}")
+            if reveal: subprocess.Popen(reveal_cmd + [path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            job.set_step("Done")
+            return {"path": path, "size": size, "files": len(m["files"]), "title": m["title"]}
+
+        job = self.jobs.start("package-export", "song:" + slug, run)
+        return self.send_json(202, {"job": job.id})
+
+    def api_package_import(self, body):
+        P = importlib.import_module("lls.package")
+        path, slug, force = body.get("path"), body.get("slug") or None, bool(body.get("force"))
+        if not isinstance(path, str) or not path: raise ApiError(400, "path to a .llsong required")
+        path = os.path.abspath(os.path.expanduser(path))
+        if not os.path.isfile(path): raise ApiError(404, f"package not found: {path}")
+        try:
+            m = P.read_manifest(path)
+        except P.PackageError as e:
+            raise ApiError(400, str(e))
+        slug = slug or m.get("slug")
+        if not isinstance(slug, str) or not SLUG.match(slug): raise ApiError(400, f"bad song slug {slug!r}")
+        if os.path.exists(os.path.join(self.songs_dir, slug)) and not force:
+            return self.send_json(409, {"error": f"song {slug!r} already exists", "exists": True, "slug": slug,
+                                        "title": m.get("title")})
+        songs_dir = self.songs_dir
+
+        def run(job):
+            job.set_step(f"Checking and unpacking {os.path.basename(path)} ({len(m['files'])} files)")
+            r = P.import_package(path, songs_dir, slug=slug, force=force, log=job.log)
+            job.set_step("Done")
+            return r
+
+        job = self.jobs.start("package-import", "song:" + slug, run)
+        return self.send_json(202, {"job": job.id, "slug": slug})
 
     # ---- import ----
     def api_import(self, body):
@@ -1087,13 +1158,14 @@ def _safe_name(s):
 
 
 def make_server(root=".", port=8765, host="127.0.0.1", quiet=False, open_cmd=None, reveal_cmd=None, osascript=None,
-                live_link=None, live_open_timeout=None):
+                live_link=None, live_open_timeout=None, downloads_dir=None):
     handler = type("LlsHandler", (Handler,), {"root": os.path.abspath(root), "quiet": quiet, "jobs": Jobs(),
                                               **({"live_link": live_link} if live_link else {}),
                                               **({"live_open_timeout": live_open_timeout} if live_open_timeout else {}),
                                               **({"open_cmd": open_cmd} if open_cmd else {}),
                                               **({"reveal_cmd": reveal_cmd} if reveal_cmd else {}),
-                                              **({"osascript": osascript} if osascript else {})})
+                                              **({"osascript": osascript} if osascript else {}),
+                                              **({"downloads_dir": downloads_dir} if downloads_dir else {})})
     return ThreadingHTTPServer((host, port), handler)
 
 
@@ -1106,6 +1178,12 @@ def main(argv):
         else: raise SystemExit(f"unknown option {a}\nusage: python -m lls ui [--port 8765] [--root DIR]")
     srv = make_server(root, port)
     print(f"lls ui → http://127.0.0.1:{srv.server_address[1]}/   (root {os.path.abspath(root)}; Ctrl-C to stop)")
+    from lls import liveapp
+    try:
+        print(f"Live: {liveapp.find_live().describe()}  ({liveapp.find_live().path})")
+        liveapp.warn_if_old()
+    except liveapp.LiveNotFound as e:
+        print(f"WARNING: {e}  (python -m lls doctor for the full checklist)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
