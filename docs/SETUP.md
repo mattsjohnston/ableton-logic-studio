@@ -4,13 +4,13 @@ This turns the band's Logic songs into Ableton Live sets you can rehearse and pl
 
 ## You need
 - **macOS** with **Logic Pro**, **Ableton Live 12 Suite** (the normal release is fine) and **Arturia Analog Lab V** installed.
-- A **GitHub** account with access to this repo, plus a way to download it. Easiest: ask Claude Code *"clone mattsjohnston/ableton-logic-studio into ~/Dev and set it up"*. It will follow `CLAUDE.md`.
+- Nothing else: the repo is public (https://github.com/mattsjohnston/ableton-logic-studio). Easiest: ask Claude Code *"clone https://github.com/mattsjohnston/ableton-logic-studio into ~/Dev and set it up"*. It will follow `CLAUDE.md`.
 
 ## 1. Get the code
 ```bash
-cd ~/Dev && gh repo clone mattsjohnston/ableton-logic-studio && cd ableton-logic-studio
+mkdir -p ~/Dev && cd ~/Dev && git clone https://github.com/mattsjohnston/ableton-logic-studio.git && cd ableton-logic-studio
 ```
-(No `gh`? `git clone https://github.com/mattsjohnston/ableton-logic-studio.git`. If macOS asks to install "command line developer tools", say yes.)
+(If macOS asks to install "command line developer tools", say yes.)
 
 ## 2. Run the installer
 Double-click **`Setup.command`** in Finder, or run `./Setup.command`. It:
