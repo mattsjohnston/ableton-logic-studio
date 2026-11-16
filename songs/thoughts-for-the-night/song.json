@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "title": "Thoughts For The Night",
-  "tempo": 100.0,
+  "tempo": 100,
   "time_signature": [
     4,
     4
   ],
   "sample_rate": 44100,
-  "length_beats": 436.0,
+  "length_beats": 436,
   "source": {
     "logicx": "/Users/mattjohnston/Dev/Ableton Logic Studio/samples/Thoughts For The Night.logicx",
     "parser": "logic2ableton 2.5.1"
@@ -16,92 +16,108 @@
     {
       "id": "s1",
       "name": "Intro",
-      "start": 0.0,
-      "end": 16.0
+      "start": 0,
+      "end": 16,
+      "vamp": false
     },
     {
       "id": "s2",
       "name": "Break 1",
-      "start": 16.0,
-      "end": 48.0
+      "start": 16,
+      "end": 48,
+      "vamp": false,
+      "cue": "Heyo"
     },
     {
       "id": "s3",
       "name": "Verse 1",
-      "start": 48.0,
-      "end": 80.0
+      "start": 48,
+      "end": 80,
+      "vamp": false
     },
     {
       "id": "s4",
       "name": "Chorus 1",
-      "start": 80.0,
-      "end": 112.0
+      "start": 80,
+      "end": 112,
+      "vamp": false
     },
     {
       "id": "s5",
       "name": "Verse 2",
-      "start": 112.0,
-      "end": 128.0
+      "start": 112,
+      "end": 128,
+      "vamp": false
     },
     {
       "id": "s6",
       "name": "Verse 2 (cont.)",
-      "start": 128.0,
-      "end": 144.0
+      "start": 128,
+      "end": 144,
+      "vamp": false
     },
     {
       "id": "s7",
       "name": "Chorus 2",
-      "start": 144.0,
-      "end": 176.0
+      "start": 144,
+      "end": 176,
+      "vamp": false
     },
     {
       "id": "s8",
       "name": "Instrumental 1",
-      "start": 176.0,
-      "end": 208.0
+      "start": 176,
+      "end": 208,
+      "vamp": false
     },
     {
       "id": "s9",
       "name": "Bridge 1",
-      "start": 208.0,
-      "end": 240.0
+      "start": 208,
+      "end": 240,
+      "vamp": false
     },
     {
       "id": "s10",
       "name": "Chorus 3",
-      "start": 240.0,
-      "end": 272.0
+      "start": 240,
+      "end": 272,
+      "vamp": false
     },
     {
       "id": "s11",
       "name": "Chorus 3 (cont.)",
-      "start": 272.0,
-      "end": 304.0
+      "start": 272,
+      "end": 304,
+      "vamp": false
     },
     {
       "id": "s12",
       "name": "Chorus 3 (cont.)",
-      "start": 304.0,
-      "end": 336.0
+      "start": 304,
+      "end": 336,
+      "vamp": false
     },
     {
       "id": "s13",
       "name": "Instrumental 2",
-      "start": 336.0,
-      "end": 368.0
+      "start": 336,
+      "end": 368,
+      "vamp": false
     },
     {
       "id": "s14",
       "name": "Chorus 4",
-      "start": 368.0,
-      "end": 396.0
+      "start": 368,
+      "end": 396,
+      "vamp": false
     },
     {
       "id": "s15",
       "name": "Outro",
-      "start": 396.0,
-      "end": 436.0
+      "start": 396,
+      "end": 436,
+      "vamp": false
     }
   ],
   "parts": [
@@ -336,7 +352,7 @@
         "name": "Quick Sampler",
         "preset": null
       },
-      "stem": "stems/export/hi-hat-1-lowtech-funk.wav",
+      "stem": null,
       "midi": "midi/hi-hat-1-lowtech-funk.json",
       "notes": 247,
       "regions": 6,
@@ -662,7 +678,9 @@
   "lineups": {
     "default": {
       "description": "Everything plays back; vocals live",
-      "treatments": {}
+      "assignments": {},
+      "performers": [],
+      "name": "Default"
     },
     "four": {
       "name": "4-piece (Matt, Keys 2, Drummer, Bass)",

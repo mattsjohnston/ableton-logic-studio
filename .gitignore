@@ -8,3 +8,5 @@ out/
 songs/*/stems/
 *.wav
 .claude/
+songs/*/song.json.bak
+*.llsong
